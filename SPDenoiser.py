@@ -79,7 +79,7 @@ class SPDenoiser(nn.Module):
         x, red = self.ConvSeq2(x)
         x, red = self.ConvSeq3(x, skip1)
         x, red = self.ConvSeq4(x, skip0)
-        x = self.dropout(x)
+        # x = self.dropout(x)
         x = self.finalConv(x)
         return x
 
@@ -107,6 +107,12 @@ class SPDataset(Dataset):
                 noisy_file = np.load(noisy_path).astype(np.float32)
                 clean_file = np.load(clean_path).astype(np.float32)
 
+                noisy_file = nn.functional.normalize(from_numpy(noisy_file))
+                noisy_file = noisy_file.cpu().detach().numpy()
+
+                clean_file = nn.functional.normalize(from_numpy(clean_file))
+                clean_file = clean_file.cpu().detach().numpy()
+
                 assert len(clean_file) == len(noisy_file)
 
                 i = 0
@@ -126,4 +132,7 @@ class SPDataset(Dataset):
 
         noisy = from_numpy(noisy).transpose(0,1).unsqueeze(0)
         clean = from_numpy(clean).transpose(0,1)[:, -1:].unsqueeze(0)
+
+        # noisy = nn.functional.normalize(noisy)
+        # clean = nn.functional.normalize(clean)
         return noisy, clean
