@@ -5,13 +5,14 @@ import soundfile as sf
 import pysptk
 import copy
 import math
-from os import listdir, walk
-from os.path import isfile, join, basename
+from os import listdir, walk, makedirs
+from os.path import isfile, join, basename, isdir
 import argparse
 import pathlib
 from multiprocessing.pool import Pool
 from multiprocessing import cpu_count
 import tqdm
+from config import *
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -21,6 +22,10 @@ gamma = 0
 mcepInput = 3  # 0 for dB, 3 for magnitude
 alpha = 0.45
 en_floor = 10 ** (-80 / 20)
+
+def checkDir(path):
+    if not isdir(path):
+        makedirs(path)
 
 def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '█', printEnd = "\r"):
     """
@@ -207,13 +212,10 @@ def process_wav(input_data):
 
     return [f0, sp, code_sp, ap, code_ap, f0c, spc, code_spc, apc, code_apc, cAudioSamples, sampleRate, basename(clean_audio_path)]
 
-def startProcessing(savepath, cleanfolder, noisefolder, output, exporttype):
-    save_path = args.AudioSavePath
+def startProcessing(save_path, cleanfolder, noisefolder, outfolder, exporttype):
 
-    cleanfolder = args.CleanFolder
     cleanfiles = [join(cleanfolder, f) for f in listdir(cleanfolder) if isfile(join(cleanfolder, f))]
 
-    noisefolder = args.NoiseFolder
     # noisefiles = [val for sublist in [[join(i[0], j) for j in i[2] if j.endswith('.wav')] for i in walk(noisefolder)] for val in sublist]
     noisefiles = [join(noisefolder, f) for f in listdir(noisefolder) if isfile(join(noisefolder, f))]
 
@@ -226,8 +228,17 @@ def startProcessing(savepath, cleanfolder, noisefolder, output, exporttype):
 
     combinedfiles = [list(ele) for ele in combinedfiles]
 
-    print("### Small file sample ###")
-    print(combinedfiles)
+    checkDir(outfolder + "csp/")
+    checkDir(outfolder + "cap/")
+    checkDir(outfolder + "sp2/")
+    checkDir(outfolder + "ap2/")
+    checkDir(outfolder + "csp2/")
+    checkDir(outfolder + "cap2/")
+    checkDir(outfolder + "sp/")
+    checkDir(outfolder + "ap/")
+
+    # print("### Small file sample ###")
+    # print(combinedfiles)
     # for i in range(10):
     #     print("Sample ", i, ": ", combinedfiles[i], "\n")
     # print(cleanfiles[:50])
@@ -238,9 +249,6 @@ def startProcessing(savepath, cleanfolder, noisefolder, output, exporttype):
     print("Number of cpu's : ", cpu_count())
 
     with Pool(cpu_count()) as p:
-
-    #     list(tqdm.tqdm(p.imap(process_wav, combinedfiles)))
-
         for output in tqdm.tqdm(p.imap(process_wav, combinedfiles), total=fileamount):
             f0 = output[0].astype(np.double)
             sp = output[1].astype(np.double)
@@ -264,14 +272,17 @@ def startProcessing(savepath, cleanfolder, noisefolder, output, exporttype):
             #     sf.write(join(save_path, basername), audiosamples, samplerate)
 
             # np.save(join(args.Output + "ccondi/", basername) + '_condi.npy', spc)
-            np.save(join(args.Output + "csp/", basername) + '_sp.npy', code_spc)
-            np.save(join(args.Output + "cap/", basername) + '_ap.npy', code_apc)
+            np.save(join(outfolder + "csp/", basername) + '_sp.npy', code_spc)
+            np.save(join(outfolder + "cap/", basername) + '_ap.npy', code_apc)
 
-            np.save(join(args.Output + "sp2/", basername) + '_sp.npy', spc)
-            np.save(join(args.Output + "ap2/", basername) + '_ap.npy', apc)
+            np.save(join(outfolder + "csp2/", basername) + '_sp.npy', spc)
+            np.save(join(outfolder + "cap2/", basername) + '_ap.npy', apc)
 
-            np.save(join(args.Output + "sp/", basername) + '_sp.npy', code_sp)
-            np.save(join(args.Output + "ap/", basername) + '_ap.npy', code_ap)
+            np.save(join(outfolder + "sp2/", basername) + '_sp.npy', sp)
+            np.save(join(outfolder + "ap2/", basername) + '_ap.npy', ap)
+
+            np.save(join(outfolder + "sp/", basername) + '_sp.npy', code_sp)
+            np.save(join(outfolder + "ap/", basername) + '_ap.npy', code_ap)
 
     
     p.close()
