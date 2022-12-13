@@ -89,10 +89,11 @@ def import_wav(wav_path):
 
 def extract_f0(audioSamples, sampleRate):
 
-    _f0, t = pw.dio(audioSamples, sampleRate, f0_floor=f0_min, f0_ceil=f0_max,
-                        frame_period=pw.default_frame_period)
+    # _f0, t = pw.dio(audioSamples, sampleRate, f0_floor=f0_min, f0_ceil=f0_max,
+    #                     frame_period=pw.default_frame_period)
+    _f0, t = pw.dio(audioSamples, sampleRate)
     _f0 = pw.stonemask(audioSamples, _f0, t, sampleRate)
-    _f0[_f0 > f0_max] = f0_max
+    # _f0[_f0 > f0_max] = f0_max
 
     return _f0, t
 
@@ -200,17 +201,15 @@ def process_wav(input_data):
     # if len(save_path) > 1:
     #     sf.write(save_path, audioSamples, sampleRate)
 
-    f0, t = extract_f0(audioSamples, sampleRate)
-    sp, code_sp = extract_sp(audioSamples, sampleRate, f0, t) 
-    ap, code_ap = extract_ap(audioSamples, sampleRate, f0, t)
+    f0, sp, ap = pw.wav2world(audioSamples, sampleRate)
+    code_sp = code_harmonic(sp, 60)
+    code_ap = pw.code_aperiodicity(ap, sampleRate)
 
-    f0c, t = extract_f0(cAudioSamples, sampleRate)
-    spc, code_spc = extract_sp(cAudioSamples, sampleRate, f0, t) 
-    apc, code_apc = extract_ap(cAudioSamples, sampleRate, f0, t)
+    f0c, spc, apc = pw.wav2world(audioSamples, sampleRate)
+    code_spc = code_harmonic(spc, 60)
+    code_apc = pw.code_aperiodicity(apc, sampleRate)
 
-    # printInfo(f0, sp, code_sp, ap, code_ap)
-
-    return [f0, sp, code_sp, ap, code_ap, f0c, spc, code_spc, apc, code_apc, cAudioSamples, sampleRate, basename(clean_audio_path)]
+    return [f0, sp, code_sp, ap, code_ap, f0c, spc, code_spc, apc, code_apc, cAudioSamples, sampleRate, basename(clean_audio_path), audioSamples]
 
 def startProcessing(save_path, cleanfolder, noisefolder, outfolder, exporttype):
 
@@ -236,6 +235,8 @@ def startProcessing(save_path, cleanfolder, noisefolder, outfolder, exporttype):
     checkDir(outfolder + "cap2/")
     checkDir(outfolder + "sp/")
     checkDir(outfolder + "ap/")
+    checkDir(outfolder + "f0c/")
+    checkDir(outfolder + "f0/")
 
     # print("### Small file sample ###")
     # print(combinedfiles)
@@ -283,6 +284,9 @@ def startProcessing(save_path, cleanfolder, noisefolder, outfolder, exporttype):
 
             np.save(join(outfolder + "sp/", basername) + '_sp.npy', code_sp)
             np.save(join(outfolder + "ap/", basername) + '_ap.npy', code_ap)
+
+            np.save(join(outfolder + "f0c/", basername) + '_f0.npy', f0c)
+            np.save(join(outfolder + "f0/", basername) + '_f0.npy', f0)
 
     
     p.close()
