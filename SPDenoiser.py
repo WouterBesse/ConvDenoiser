@@ -16,7 +16,7 @@ class ConvBlock(nn.Module):
         self.skip = skip
 
     def forward(self, x, oldskip = None):
-        skip = self.conv1D(x)
+        skip = self.conv1D(x.to('cuda'))
         # print("Convstep size: ", skip.size())
 
         if oldskip is not None:
@@ -31,15 +31,16 @@ class ConvBlock(nn.Module):
             return x
 
 class ConvSeq(nn.Module):
-    def __init__(self):
+    def __init__(self, device):
         super().__init__()
 
         self.Conv1 = ConvBlock(8, 18, (9,1))
         self.Conv2 = ConvBlock(18, 30, (5,1), skip=True)
         self.Conv3 = ConvBlock(30, 8, (9,1))
+        self.device = device
 
     def forward(self, x, skip=None):
-        x = self.Conv1(x)
+        x = self.Conv1(x.to(self.device))
         x, skip = self.Conv2(x, skip)
         x = self.Conv3(x)
         return x, skip
@@ -55,10 +56,10 @@ class SPDenoiser(nn.Module):
         self.secondConv = ConvBlock(18, 30, (5,1), skip=True).to(device)
         self.thirdConv = ConvBlock(30, 8, (9,1)).to(device)
 
-        self.ConvSeq1 = ConvSeq().to(device)
-        self.ConvSeq2 = ConvSeq().to(device)
-        self.ConvSeq3 = ConvSeq().to(device)
-        self.ConvSeq4 = ConvSeq().to(device)
+        self.ConvSeq1 = ConvSeq(device).to(device)
+        self.ConvSeq2 = ConvSeq(device).to(device)
+        self.ConvSeq3 = ConvSeq(device).to(device)
+        self.ConvSeq4 = ConvSeq(device).to(device)
         # self.fourthConv = ConvBlock(8, 18, (9,1))
         # self.fifthConv = ConvBlock(18, 30, (5,1), skip=True)
         # self.sixthConv = ConvBlock(30, 8, (9,1))
@@ -68,10 +69,12 @@ class SPDenoiser(nn.Module):
 
         self.dropout = nn.Dropout2d(p=0.2).to(device)
         self.finalConv = nn.Conv2d(8, 1, kernel_size=(features, 1), bias=False, padding = 'same', stride=(1,1)).to(device)
+        self.device = device
 
         
     def forward(self, input):
-        x = self.zeroPadding(input)
+        x = input.to(self.device)
+        x = self.zeroPadding(x)
         x = self.firstConv(x)
         x, skip0 = self.secondConv(x)
         x = self.thirdConv(x)
