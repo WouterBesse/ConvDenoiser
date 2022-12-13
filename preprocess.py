@@ -76,13 +76,15 @@ def decode_harmonic(mfsc, fftlen):
 
 def import_wav(wav_path):
 
-    audioSamples, originalSampleRate = librosa.load(wav_path, dtype=np.double)
+    audioSamples, originalSampleRate = sf.read(wav_path)
 
     if len(audioSamples.shape) > 1:
         audioSamples = np.ascontiguousarray((audioSamples[:, 0]+audioSamples[:, 1])/2)
 
     sampleRate = sample_rate
+    # print("Samplerate: ", sampleRate, " | OGSamplerate: ", originalSampleRate)
     if originalSampleRate != sampleRate:
+        # print('resampling')
         audioSamples = librosa.resample(audioSamples, orig_sr=originalSampleRate, target_sr=sampleRate)
 
     return audioSamples, sampleRate
@@ -205,7 +207,7 @@ def process_wav(input_data):
     code_sp = code_harmonic(sp, 60)
     code_ap = pw.code_aperiodicity(ap, sampleRate)
 
-    f0c, spc, apc = pw.wav2world(audioSamples, sampleRate)
+    f0c, spc, apc = pw.wav2world(cAudioSamples, sampleRate)
     code_spc = code_harmonic(spc, 60)
     code_apc = pw.code_aperiodicity(apc, sampleRate)
 
