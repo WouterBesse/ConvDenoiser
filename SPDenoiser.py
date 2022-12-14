@@ -1,8 +1,34 @@
-from torch import nn, from_numpy, squeeze, unsqueeze, transpose
+from torch import nn, from_numpy
+import torch
 from torch.utils.data import Dataset
 import os
 from tqdm import tqdm
 import numpy as np
+
+def normalize2(clean_file, noisy_file):
+    noisy_file = from_numpy(noisy_file)
+    clean_file = from_numpy(clean_file)
+
+    noisy_min = torch.min(noisy_file)
+    clean_min = torch.min(clean_file)
+
+    noisy_file = noisy_file - min(noisy_min, clean_min)
+    clean_file = clean_file - min(noisy_min, clean_min)
+
+    noisy_max = torch.max(noisy_file)
+    clean_max = torch.max(clean_file)
+
+    noisy_file = noisy_file / max(noisy_max, clean_max)
+    clean_file = clean_file / max(noisy_max, clean_max)
+
+    # print(torch.max(noisy_file), torch.min(noisy_file))
+
+    noisy_file = noisy_file.cpu().detach().numpy()
+    clean_file = clean_file.cpu().detach().numpy()
+
+    
+
+    return clean_file, noisy_file
 
 # Torch implementation of https://github.com/sthalles/cnn_denoiser
 class ConvBlock(nn.Module):
@@ -82,7 +108,7 @@ class SPDenoiser(nn.Module):
         x, red = self.ConvSeq2(x)
         x, red = self.ConvSeq3(x, skip1)
         x, red = self.ConvSeq4(x, skip0)
-        # x = self.dropout(x)
+        x = self.dropout(x)
         x = self.finalConv(x)
         return x
 
@@ -90,7 +116,7 @@ class SPDenoiser(nn.Module):
 # Custom dataset for SP Denoiser
 class SPDataset(Dataset):
 
-    def __init__(self, trainN_dir, trainC_dir, transform=None, target_transform=None):
+    def __init__(self, trainN_dir, trainC_dir, transform=None, target_transform=None, segments=8):
         print("Directories: ", trainN_dir, "|", trainC_dir)
         
         nTrain_dirlist = os.listdir(trainN_dir)
@@ -110,18 +136,24 @@ class SPDataset(Dataset):
                 noisy_file = np.load(noisy_path).astype(np.float32)
                 clean_file = np.load(clean_path).astype(np.float32)
 
-                noisy_file = nn.functional.normalize(from_numpy(noisy_file))
-                noisy_file = noisy_file.cpu().detach().numpy()
+                
 
-                clean_file = nn.functional.normalize(from_numpy(clean_file))
-                clean_file = clean_file.cpu().detach().numpy()
+                # meannumb = torch.mean(torch.cat((noisy_file, clean_file), dim=0))
+
+                # noisy_file = nn.functional.normalize(from_numpy(noisy_file))
+                
+
+                # clean_file = nn.functional.normalize(from_numpy(clean_file))
+
+                clean_file, noisy_file = normalize2(clean_file, noisy_file)
+                
 
                 assert len(clean_file) == len(noisy_file)
 
                 i = 0
-                while i < len(clean_file) - 8:
-                    self.nTrain_samples.append(noisy_file[i:i+8])
-                    self.cTrain_samples.append(clean_file[i:i+8])
+                while i < len(clean_file) - segments:
+                    self.nTrain_samples.append(noisy_file[i:i+segments])
+                    self.cTrain_samples.append(clean_file[i:i+segments])
                     i += 1
 
                 pbar.update(1)
@@ -134,6 +166,7 @@ class SPDataset(Dataset):
         clean = self.cTrain_samples[idx]
 
         noisy = from_numpy(noisy).transpose(0,1).unsqueeze(0)
+        # cleanog = from_numpy(clean).transpose(0,1).unsqueeze(0)
         clean = from_numpy(clean).transpose(0,1)[:, -1:].unsqueeze(0)
 
         # noisy = nn.functional.normalize(noisy)
