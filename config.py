@@ -5,7 +5,7 @@ verbose = {
 }
 
 hop = 160  # sample_rate * 0.005 in which world default_frame_period is 5 millisecond == 0.005 second
-sample_rate = 44100
+sample_rate = 32000
 # data_sample_rate = 44100
 
 fft_size = 2048
