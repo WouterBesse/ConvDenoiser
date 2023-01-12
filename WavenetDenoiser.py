@@ -72,14 +72,14 @@ class CausalDilatedConv1D(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, dilation, padding = 1):
         super().__init__()
 
-        self.dilpad = nn.ConstantPad1d((dilation, 0), 0)
+        # self.dilpad = nn.ConstantPad1d((dilation, 0), 0)
         # self.pad = (kernel_size - 1) * dilation
         self.conv1D = nn.Conv1d(in_channels, out_channels, kernel_size, dilation = dilation, bias=True)
         nn.init.xavier_uniform_(self.conv1D.weight, gain=nn.init.calculate_gain('linear'))
         # self.ignoreOutIndex = (kernel_size-1) * dilation
 
     def forward(self, x):
-        x = self.dilpad(x)
+        # x = self.dilpad(x)
         return self.conv1D(x)
 
 class DilBlock(nn.Module):
@@ -135,6 +135,7 @@ class EndBlock(nn.Module):
         self.tanh = nn.Tanh()
         self.lastconv = nn.Conv1d(skip_channels, out_channels, kernel_size = 1, bias=True)
         nn.init.xavier_uniform_(self.lastconv.weight, gain=nn.init.calculate_gain('linear'))
+        self.dropout = nn.Dropout1d(p=0.2)
 
         self.condiendconv = nn.Conv1d(condition_channels, skip_channels, kernel_size=1, bias=True)
         nn.init.xavier_uniform_(self.condiendconv.weight, gain=nn.init.calculate_gain('linear'))
@@ -144,6 +145,7 @@ class EndBlock(nn.Module):
         x = x + condi
 
         out = self.tanh(x)
+        out = self.dropout(out)
         out = self.lastconv(out)
 
         return out
@@ -205,7 +207,9 @@ class SPWavenetDenoiser(nn.Module):
         return s
 
     def generate(self, condition):
-        
+
+        self.eval()
+
         cat_input = None
         num_samples = condition.shape[1]
         generated = torch.zeros(60, num_samples).to(self.device)
@@ -243,6 +247,8 @@ class SPWavenetDenoiser(nn.Module):
                     model_input = torch.cat((to_cat, model_input), 0)
 
             model_input = model_input.unsqueeze(0)
+
+        self.train()
 
         return generated
         

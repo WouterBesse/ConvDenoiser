@@ -13,6 +13,7 @@ from multiprocessing.pool import Pool
 from multiprocessing import cpu_count
 import tqdm
 from config import *
+import random
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -186,7 +187,7 @@ def printInfo(f0, sp, code_sp, ap, code_ap):
     print("Coded aperiodicity shape: ", code_ap.shape)
     print("\n")
 
-def process_wav(input_data):
+def process_wav(input_data, preMerged = False):
 
     # print('swag')
     
@@ -196,14 +197,16 @@ def process_wav(input_data):
     cAudioSamples, cSampleRate = import_wav(clean_audio_path)
     nAudioSamples, nSampleRate = import_wav(noise_audio_path)
 
-    audioSamples, cAudioSamples = cut_combine_audio(cAudioSamples, nAudioSamples)
+    
+    nAudioSamples, cAudioSamples = cut_combine_audio(cAudioSamples, nAudioSamples)
+
 
     sampleRate = sample_rate
 
     # if len(save_path) > 1:
     #     sf.write(save_path, audioSamples, sampleRate)
 
-    f0, sp, ap = pw.wav2world(audioSamples, sampleRate)
+    f0, sp, ap = pw.wav2world(nAudioSamples, sampleRate)
     code_sp = code_harmonic(sp, 60)
     code_ap = pw.code_aperiodicity(ap, sampleRate)
 
@@ -211,7 +214,7 @@ def process_wav(input_data):
     code_spc = code_harmonic(spc, 60)
     code_apc = pw.code_aperiodicity(apc, sampleRate)
 
-    return [f0, sp, code_sp, ap, code_ap, f0c, spc, code_spc, apc, code_apc, cAudioSamples, sampleRate, basename(clean_audio_path), audioSamples]
+    return [f0, sp, code_sp, ap, code_ap, f0c, spc, code_spc, apc, code_apc, cAudioSamples, sampleRate, basename(clean_audio_path), nAudioSamples]
 
 def startProcessing(save_path, cleanfolder, noisefolder, outfolder, exporttype):
 
@@ -240,6 +243,10 @@ def startProcessing(save_path, cleanfolder, noisefolder, outfolder, exporttype):
     checkDir(outfolder + "f0c/")
     checkDir(outfolder + "f0/")
 
+    random.shuffle(combinedfiles)
+
+    print(combinedfiles[0:20])
+
     # print("### Small file sample ###")
     # print(combinedfiles)
     # for i in range(10):
@@ -252,7 +259,7 @@ def startProcessing(save_path, cleanfolder, noisefolder, outfolder, exporttype):
     print("Number of cpu's : ", cpu_count())
 
     with Pool(cpu_count()) as p:
-        for output in tqdm.tqdm(p.imap(process_wav, combinedfiles), total=fileamount):
+        for output in tqdm.tqdm(p.imap(process_wav, combinedfiles[0:2000]), total=2000):
             f0 = output[0].astype(np.double)
             sp = output[1].astype(np.double)
             code_sp = output[2].astype(np.double)
@@ -314,7 +321,7 @@ if __name__ == '__main__':
     parser.add_argument('--Output', type=str,
                         help="Output folder")
 
-    parser.add_argument('Type', type=str,
+    parser.add_argument('--Type', type=str,
                         help="All, F0, SP or AP")
 
     args = parser.parse_args()
