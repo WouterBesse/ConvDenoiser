@@ -72,7 +72,7 @@ class ConvSeq(nn.Module):
         return x, skip
     
 
-# Denoiser will get tensors of 129 features (frequency) by 8 segments (timesteps)
+# Denoiser will get tensors of 60 features (frequency) by 8 segments (timesteps)
 class SPDenoiser(nn.Module):
     def __init__(self, features, segments, device):
         super().__init__()
