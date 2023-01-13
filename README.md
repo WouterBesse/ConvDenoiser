@@ -11,6 +11,7 @@ It generates new Cepstrum frames based on the previous 7 frames + the current fr
 ## 2D WaveNet archetecture
 This is a pytorch implementation of a WaveNet archetecture like the one described in [the paper from Merlijn Blaauw](https://arxiv.org/abs/1704.03809) and [the implementation from Seanie Zhao](https://github.com/seaniezhao/torch_npss).
 It generates a mixed gaussian distribution for every frame and stitches these together.
+It uses the noisy Mel Cepstrum as condition that is feeded into the system at every step.
 
 ## AutoEncoder
 This one is still in construction :(
