@@ -20,6 +20,7 @@ class Wavenet(nn.Module):
         # Wavenet layers
         dilation = 1
         receptive_field = 1
+        self.dropout = nn.Dropout(p = dropout)
         
         self.conv_layers = nn.ModuleList()
         for stack in range(stacks):
@@ -116,9 +117,11 @@ class Wavenet(nn.Module):
         # for f in self.final_convs:
         #     x = f(x)
         x = self.final_convs_1(x)
+        x = self.dropout(x)
         # print(x.size())
         # x += c
         x = self.final_convs_2(x)
+        x = self.dropout(x)
 
         # x = nn.functional.softmax(x, dim=1)
 

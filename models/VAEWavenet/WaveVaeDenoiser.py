@@ -216,112 +216,78 @@ class WaveVaeDataset(Dataset):
         
         self.sp_min = 99999999999
         self.sp_max = -99999999999
+        
+        mfcc_trans = MFCC(33000, 40, log_mels = True, melkwargs={"hop_length": 33}) # Create MFCC in the right samplerate
 
         with tqdm(total=len(clean_filepaths), desc=f'Loading files to dataset. Len clean_files =  {len(self.clean_files)}') as pbar:
             # for noisy, clean in zip(nTrain_dirlist, cTrain_dirlist):
+            
             for f in clean_filepaths:
                 if os.path.isfile(os.path.join(clean_folder, f)):
-                    audiopath = os.path.join(clean_folder, f)
-                    audiofile, samplerate = torchaudio.load(audiopath)
-                    # audiofile = self.remove_silent_frames(audiofile.squeeze().numpy())
-                    # audiofile = torch.from_numpy(audiofile).unsqueeze(0)
+                    noise_indices = []
+                    noiserange = 3
+                    for r in range(noiserange): # Choose a random noise file 3 times, to create 3 copies of the same voice with different noise profiles
+                        noise_selector = random.randint(0, len(self.noisy_filepaths) - 1)
+                        if noise_selector not in noise_indices:
+                            noise_indices.append(noise_selector)
+                        else:
+                            noiserange += 1
                     
-                    mfcc_trans = MFCC(samplerate, 40, log_mels = True, melkwargs={"hop_length": 33})
-                    
-                    
-                    
-                    # Load and create noisy file
-                    noise_selector = random.randint(0, len(self.noisy_filepaths) - 1) # Choose a random noise file each time
-                    snr_dbs = random.randint(2, 13) # Signal to noise ratio
-                    # print("SNR DBS:", snr_dbs)
-        
-                    noise_path = self.noisy_filepaths[noise_selector]
-                    # print(noise_path)
-                    noise_waveform, noise_samplerate = torchaudio.load(noise_path)
-                    resampler = Resample(noise_samplerate, samplerate)
-                    noise_waveform = resampler(noise_waveform)
-                    while noise_waveform.size()[-1] < 128000:
-                        noise_selector = random.randint(0, len(self.noisy_filepaths) - 1) # Choose a random noise file each time
-
-                        noise_path = self.noisy_filepaths[noise_selector]
-                        # print(noise_path)
-                        noise_waveform, noise_samplerate = torchaudio.load(noise_path)
-                        resampler = Resample(noise_samplerate, samplerate)
-                        noise_waveform = resampler(noise_waveform)
+                    for i in range(len(noise_indices)):
+                        clean_audiopath = os.path.join(clean_folder, f)
+                        noisy_audiopath = self.noisy_filepaths[noise_selector]
                         
+                        clean_audiofile, clean_rate = torchaudio.load(audiopath)
+                        noisy_audiofile, noisy_rate = torchaudio.load(noise_path)
+
+                        # Add noise to voice for a voice file with noise
+                        snr_dbs = random.randint(2, 13) # Random signal to noise ratio between 2 and 13
                         
-                    if noise_waveform.size()[0] == 2:
-                        noise_waveform = torch.mean(noise_waveform, dim=0).unsqueeze(0)
+                        resampler = Resample(noisy_rate, clean_rate)
+                        noisy_audiofile = resampler(noise_waveform)
+                        
+                        # Make stereo file mono
+                        if noisy_audiofile.size()[0] == 2:
+                            noisy_audiofile = torch.mean(noise_waveform, dim=0).unsqueeze(0)
+                        
+                        if noise_waveform.size()[-1] >= clean_audiofile.size()[-1]:
+                            clean_audiofile = clean_audiofile[:, :noise_waveform.size()[-1]]
+                            noisy_audiofile = noisy_audiofile[:, :clean_audiofile.size()[-1]]
+                            noisy_audiofile = WOP.add_noise(clean_audiofile, noisy_audiofile[:, :clean_audiofile.size()[-1]], torch.Tensor([snr_dbs]))
+                        else: # In exceptions add some instances where it's just noise or just clean voice
+                            noise_or_clean = random.randint(0, 1)
+                            if noise_or_clean == 0:
+                                clean_audiofile = torch.zeros(noisy_audiofile.size())
+                            else:
+                                noisy_audiofile = clean_audiofile
 
-                    audiofile = audiofile[:, :noise_waveform.size()[-1]]
-                    noise_waveform = noise_waveform[:, :audiofile.size()[-1]]
-                    
-                    noise_waveform = WOP.add_noise(audiofile, noise_waveform[:, :audiofile.size()[-1]], torch.Tensor([snr_dbs]))
+                        i = 256 # Start 256 samples in so it has information about the past
+                           
+                        while i < audiofile.size()[-1] - 256:
+                            
+                            clean_audio = audiofile[:, i - clip_length:i + clip_length]
+                            noisy_audio = noise_waveform[:, i - clip_length:i + clip_length]
+                            mfcc = mfcc_trans(clean_audio).squeeze()
 
-                    i = 256
-                    # Make sure there are plenty of zero lists to symbolise data where you havent generated anything yet
-                    while i < audiofile.size()[-1] - 256:
-                    # while i < 66000:
-#                         if i < clip_length:
-#                             clean_audio = audiofile[:, 0:i + clip_length + 1]
-#                             noisy_audio = WOP.add_noise(clean_audio, noise_waveform[:, : clean_audio.size()[-1]], torch.Tensor([snr_dbs]))
-                            
-#                             # MFCC generations
-#                             # mfcc = mfcc_trans(clean_audio).squeeze()
-                            
-#                             # Create Zeros
-#                             audio_zeros = torch.zeros(1, clip_length - i)
-#                             # mfcc_zeros = torch.zeros(64, clip_length // 32 - mfcc.size()[-1])
-                            
-#                             # Add Zeros                    
-#                             clean_audio = torch.cat((audio_zeros, clean_audio), 1)
-#                             noisy_audio = torch.cat((audio_zeros, noisy_audio), 1)
-#                             mfcc = mfcc_trans(clean_audio).squeeze() # Noisy audio spectrum
-#                             # mfcc = torch.cat((mfcc_zeros, mfcc), 1) 
-                            
-#                             if torch.isnan(torch.min(mfcc)) or torch.isnan(torch.max(mfcc)):
-#                                 print("NAN!", i)
-                            
-#                             self.clean_files.append(clean_audio)
-#                             self.noisy_files.append(noisy_audio)
-#                             self.mfccs.append(mfcc)
-                                                        
-#                             au_min = min(torch.min(noisy_audio), torch.min(clean_audio))
-#                             au_max = max(torch.max(noisy_audio), torch.max(clean_audio))
-#                             au_max_abs = max(au_max, abs(au_min))
-#                             self.au_min, self.au_max = self.getMinMax(au_min, au_max_abs, self.au_min, self.au_max)
-                            
-#                             sp_min = torch.min(mfcc)
-#                             sp_max = torch.max(mfcc)
-#                             self.sp_min, self.sp_max = self.getMinMax(sp_min, sp_max, self.sp_min, self.sp_max)
-                            
-#                             i += 16
-#                             # print(i)
-#                         else:
-                        clean_audio = audiofile[:, i - clip_length:i + clip_length]
-                        # self.pure_noise.append(noise_waveform[:, : clean_audio.size()[-1]])
-                        noisy_audio = noise_waveform[:, i - clip_length:i + clip_length]
-                        mfcc = mfcc_trans(clean_audio).squeeze()
+                            self.clean_files.append(clean_audio)
+                            self.noisy_files.append(noisy_audio)
 
-                        self.clean_files.append(clean_audio)
-                        self.noisy_files.append(noisy_audio)
-                    
-                        self.mfccs.append(mfcc)
+                            self.mfccs.append(mfcc)
 
-                        au_min = min(torch.min(noisy_audio), torch.min(clean_audio))
-                        au_max = max(torch.max(noisy_audio), torch.max(clean_audio))
-                        au_max_abs = max(au_max, abs(au_min))
-                        self.au_min, self.au_max = self.getMinMax(au_min, au_max, self.au_min, self.au_max)
+                            au_min = min(torch.min(noisy_audio), torch.min(clean_audio))
+                            au_max = max(torch.max(noisy_audio), torch.max(clean_audio))
+                            au_max_abs = max(au_max, abs(au_min))
+                            self.au_min, self.au_max = self.getMinMax(au_min, au_max, self.au_min, self.au_max)
 
-                        sp_min = torch.min(mfcc)
-                        sp_max = torch.max(mfcc)
-                        self.sp_min, self.sp_max = self.getMinMax(sp_min, sp_max, self.sp_min, self.sp_max)
+                            sp_min = torch.min(mfcc)
+                            sp_max = torch.max(mfcc)
+                            self.sp_min, self.sp_max = self.getMinMax(sp_min, sp_max, self.sp_min, self.sp_max)
 
-                        i += 400
+                            i += 400
 
-                    self.samplerate = samplerate
-                    
-                    
+                        self.samplerate = samplerate
+
+
                     pbar.set_description(f'Loading files to dataset. Len clean_files =  {len(self.clean_files)}. ')
                     pbar.update(1)
                     
@@ -332,7 +298,7 @@ class WaveVaeDataset(Dataset):
         self.audiovar = torch.cat((torch.stack(self.noisy_files), torch.stack(self.clean_files)), 0).var()
         
                     
-        print(self.samplerate)
+        print("Samplerate:", self.samplerate)
         print("Sp mean:", self.spmean, "Sp var:", self.spvar)
         print("Au mean:", self.audiomean, "Au var:", self.audiovar)
         
@@ -369,41 +335,10 @@ class WaveVaeDataset(Dataset):
         clean_audio = self.clean_files[idx]
         noisy_audio = self.noisy_files[idx]
         mfcc = self.mfccs[idx]
-        
-#         if clean_audio.size()[-1] != self.clip_length + 1:
-#             print('clean audio', clean_audio.size())
-            
-#         if noisy_audio.size()[-1] != self.clip_length + 1:
-#             print('clean audio', noisy_audio.size())
-            
-        # if torch.min(mfcc) == nan
-        # noisy_audio = noisy_audio / self.au_max # Normalise the audio to be between -1 and 1
-        # clean_audio = clean_audio / self.au_max # Normalise the audio to be between -1 and 1
-        
-        # noisy_audio = (noisy_audio - self.audiomean) / math.sqrt(self.audiovar)
-        # noisy_audio_for_noise = (noisy_audio - self.cleanmean) / self.cleanvar
-        # clean_audio = (clean_audio - self.audiomean) / math.sqrt(self.audiovar)
+
         noisy_audio = (noisy_audio - self.au_min) / (self.au_max - self.au_min)
         clean_audio = (clean_audio - self.au_min) / (self.au_max - self.au_min)
         
         mfcc = (mfcc - self.sp_min) / (self.sp_max - self.sp_min) # Normalise the spectrum to be between 0 and 1
-        
-        # Create clean target
-#         waveform_norm_mult_c = clean_audio
-#         waveform_target = waveform_norm_mult_c
-        # waveform_quantized_target = self.mulaw(clean_audio)
-        
-#         # Create clean input
-#         waveform_norm_mult_n = noisy_audio
-#         waveform_noisy = waveform_norm_mult_n
-#         waveform_noisy_unquantized = waveform_noisy
-
-        # waveform_quantized_noisy = self.mulaw(noisy_audio)
-
-        # if torch.min(waveform_quantized_noisy) < 0:
-        #     print(torch.min(waveform_noisy_unquantized), torch.max(waveform_noisy_unquantized))
-#         if self.one_hot:
-#             waveform_noisy = torch.nn.functional.one_hot(waveform_quantized_noisy, num_classes = 256).squeeze().float()
-#             waveform_quantized_noisy = waveform_noisy.permute(1, 0)
         
         return noisy_audio, mfcc.squeeze(), clean_audio, noisy_audio.squeeze() - clean_audio.squeeze()#, self.pure_noise[idx]#, waveform_noisy_unquantized
