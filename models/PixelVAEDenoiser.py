@@ -3,7 +3,8 @@ import torch
 from torch import nn, from_numpy
 import torch.nn.functional as F
 from torch.utils.data import Dataset
-import CustomModules
+from torchaudio.transforms import MuLawEncoding
+import models.CustomModules as CustomModules
 from tqdm import tqdm
 import numpy as np
 import os
@@ -11,10 +12,27 @@ import os
 """
 Util functions
 """    
+def sample(device, mu, logvar, eps=None):
+    # b, l = zmean.size()
+
+    # if eps is None:
+    #     eps = torch.randn(b, l)
+    #     if zmean.is_cuda:
+    #         eps = eps.cuda()
+    #     eps = eps
+
+    # return zmean + eps * (zlsig * 0.5).exp()
+
+    std = logvar.mul(0.5).exp()
+    # return torch.normal(mu, std)
+    eps = torch.randn(*mu.size()).cuda()
+    z = mu + std * eps
+    return z
+
 def dimensionSize(in_size, upsamples):
         division = 1
         for upsample in upsamples:
-            multiplier *= upsample
+            division *= upsample
         return in_size // division
 
 class Flatten(nn.Module):
@@ -65,7 +83,7 @@ class convBlock(nn.Module):
 
         x = self.upchannels(x)
 
-        out = self.seq(x)
+        out = self.block(x)
 
         return out + self.weight * x
 
@@ -120,7 +138,7 @@ class LMaskedConv2d(nn.Module):
             self.hmask[f:t, :f+pc, 0, m] = 1 # Sets the left horizontal middle position to 1. Place for us = [0:20, :20, 0, m]
             self.hmask[f + channels:t + channels, :f+pc, 0, m] = 1 # [20:40, :20, 0, m]
 
-        print(self.hmask[:, :, 0, m])
+        # print(self.hmask[:, :, 0, m])
 
         # The conditional weights
         self.vhf = nn.Conv2d(conditional_channels, channels, 1)
@@ -156,7 +174,7 @@ class LMaskedConv2d(nn.Module):
         bottom = x[:, half:]
 
         # apply gate and return
-        return F.tanh(top + tan_bias) * F.sigmoid(bottom + sig_bias)
+        return torch.tanh(top + tan_bias) * torch.sigmoid(bottom + sig_bias)
 
     def forward(self, vxin, hxin, h):
 
@@ -176,7 +194,7 @@ class LMaskedConv2d(nn.Module):
         if self.res_connection:
             hx = hxin + self.tores(hx)
 
-        return vx, 
+        return vx, hx
 
 
 class LGated(nn.Module):
@@ -240,13 +258,13 @@ class Encoder(nn.Module):
             nn.MaxPool2d(upsamples[0]),
             convBlock(channel_sizes[0], channel_sizes[1], batch_norm = use_bn, use_res = True),
             nn.MaxPool2d(upsamples[0]),
-            convBlock(channel_sizes[1], channel_sizes[2], batch_norm = use_bn, use_res = True),
-            nn.MaxPool2d(upsamples[0]),
+            # convBlock(channel_sizes[1], channel_sizes[2], batch_norm = use_bn, use_res = True),
+            # nn.MaxPool2d(upsamples[0]),
         ]
 
         for _ in range(depth):
             modules.append(convBlock(channel_sizes[2], channel_sizes[2], batch_norm = use_bn, use_res = True))
-
+            
         modules.extend([
             Flatten(),
             nn.Linear(dimensionSize(features, upsamples) * dimensionSize(timesteps, upsamples) * channel_sizes[-1], zsize * 2)
@@ -284,10 +302,10 @@ class Decoder(nn.Module):
 
 
         modules.extend([
-            nn.Upsample(scale_factor = upsamples[2], mode = upmode),
-            convBlock(channel_sizes[2], channel_sizes[2], deconv = True, batch_norm = use_bn, use_res = True),
             nn.Upsample(scale_factor = upsamples[1], mode = upmode),
-            convBlock(channel_sizes[2], channel_sizes[1], deconv = True, batch_norm = use_bn, use_res = True),
+            convBlock(channel_sizes[1], channel_sizes[1], deconv = True, batch_norm = use_bn, use_res = True),
+            # nn.Upsample(scale_factor = upsamples[1], mode = upmode),
+            # convBlock(channel_sizes[2], channel_sizes[1], deconv = True, batch_norm = use_bn, use_res = True),
             nn.Upsample(scale_factor = upsamples[0], mode = upmode),
             convBlock(channel_sizes[1], channel_sizes[0], deconv = True, batch_norm = use_bn, use_res = True),
             nn.ConvTranspose2d(channel_sizes[0], out_channels, kernel_size=1, padding=0),
@@ -307,6 +325,8 @@ class SPDataset(Dataset):
         
         nTrain_dirlist = os.listdir(trainN_dir)
         cTrain_dirlist = os.listdir(trainC_dir)
+        
+        self.transform = MuLawEncoding(quantization_channels=256)
 
         self.nTrain_samples = []
         self.cTrain_samples = []
@@ -363,20 +383,15 @@ class SPDataset(Dataset):
 
     def __getitem__(self, idx):
         noisy = self.nTrain_samples[idx]
-        # cleany = self.cTrain_samples[idx]
         clean = self.cTrain_samples[idx]
         
-        clean = (clean - self.sp_min) / (self.sp_max - self.sp_min)
-        # cleany = (cleany - self.sp_min) / (self.sp_max - self.sp_min) - 0.5
-
+        clean = (clean - self.sp_min) / (self.sp_max - self.sp_min) # Normalise the spectrum to be between 0 and 1
+        clean = clean * 2 - 1 # Transform the spectrum to be between -1 and 1 (necessary for Mu Law Quantisation)
+        
+        
         noisy = from_numpy(noisy).transpose(0,1)
         # cleanog = from_numpy(clean).transpose(0,1).unsqueeze(0)
         clean = from_numpy(clean).transpose(0,1).unsqueeze(0)
-        clean2 = torch.clone(clean)
-
-        # noisy = nn.functional.normalize(noisy)
-        # clean = nn.functional.normalize(clean)
+        scaledClean = self.transform(clean)
         
-        # clean = (clean_file - sp_min) / (sp_max - sp_min) - 0.5
-        
-        return clean
+        return clean, scaledClean
