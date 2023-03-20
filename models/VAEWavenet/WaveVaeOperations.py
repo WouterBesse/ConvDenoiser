@@ -10,17 +10,6 @@ from torchaudio import functional as F
 """
 Util functions
 """    
-# def sampleold(zmean, zlsig, eps=None):
-#     b, l = zmean.size()
-#     device = zmean.get_device()
-
-#     if eps is None:
-#         eps = torch.randn(b, l)
-#         if zmean.is_cuda:
-#             eps = eps.to(device)
-#         eps = eps
-
-#     return zmean + eps * (zlsig * 0.5).exp()
 
 def CausalConv1d(in_channels, out_channels, kernel_size, dilation=1, **kwargs):
    pad = (kernel_size - 1) * dilation
@@ -29,26 +18,6 @@ def CausalConv1d(in_channels, out_channels, kernel_size, dilation=1, **kwargs):
 def dimensionSize(in_size, division):
         return in_size // division
 
-# def gated_cnn(net, in_channels, out_channels, kernel_size, dilations, 
-#     local_condition):
-#     x = CausalConv1d(in_channels, 2 * out_channels, kernel_size, dilations)
- 
-#     net = add_condition(net, local_condition)
-
-#     net_filter, net_gate = net[:, :, : dilation_filters], net[:, :, dilation_filters: ]
-#     net = tf.nn.tanh(net_filter) * tf.nn.sigmoid(net_gate)
-#     return net
-
-# def add_condition(net, condition):
-#     if condition is not None:
-#         _, net_len, out_channels = net.shape.as_list()
-#         T = condition.size()[-1]
-#         encoding = conv1d_v2(condition, out_channels, kernel_size=1, log=True, use_bias=False)
-        
-#         net = tf.reshape(net, [-1, T, net_len // T, out_channels])
-#         net += tf.expand_dims(encoding, 2)
-#         net = tf.reshape(net, [-1, net_len, out_channels])
-#     return net
 
 def receptive_field_size(total_layers, stacks, kernel_size,
                          dilation=lambda x: 2**x, target_field_length = 1):
@@ -81,7 +50,7 @@ def receptive_field_size(total_layers, stacks, kernel_size,
 
 
 """
-Toch Modules
+Torch Modules
 """
 
 class AddCond(nn.Module):
@@ -220,25 +189,14 @@ class ResidualConv1dGLU(nn.Module):
         """
         residual = x
         x = self.dropout(x)
-        # print('c0', c.size())
         condition = self.conv1cond(c)
-        # print('x1', x.size())
-        # print('c1', condition.size())
 
         
-        
-        # dilation with remove future time steps
+        # Dilated convolution
         x = self.dil_conv(x)
-        # print('x2', x.size())
-        # x = x[:, :, :residual.size(-1)]
-        # print('x3', x.size())
-        
-        # combined_x = x + condition
-        # filt, gate = combined_x.split(x.size(self.splitdim) // 2, dim=self.splitdim)
         a, b = x.split(x.size(self.splitdim) // 2, dim=self.splitdim)
 
         # local conditioning
-        
         ca, cb = c.split(condition.size(self.splitdim) // 2, dim=self.splitdim)
         filt, gate = a + ca, b + cb
 
@@ -246,18 +204,15 @@ class ResidualConv1dGLU(nn.Module):
 
         # For skip connection
         s = self.conv1_skip(x)
-        # print('s', s.size())
-        # print('skip', skip.size())
         skip = skip + s
 
         # For residual connection
         x = self.conv1_out(x)
-        # print(x.size(), s.size())
-
         x = (x + residual) * math.sqrt(0.5)
         
         return x, skip
-    
+
+# Function copied from alpha pytorch build
 def add_noise(
     waveform: torch.Tensor, noise: torch.Tensor, snr: torch.Tensor, lengths: Optional[torch.Tensor] = None
 ) -> torch.Tensor:

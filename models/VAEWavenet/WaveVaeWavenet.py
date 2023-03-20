@@ -41,14 +41,14 @@ class Wavenet(nn.Module):
         self.final_convs_1 = nn.Sequential(
             nn.ReLU(inplace = True),
             WOP.normalisedConv1d(skip_channels, skip_channels, kernel_size = 1),
-            nn.BatchNorm1d(skip_channels)
+            nn.Dropout(p = dropout)
             # nn.Linear(int(timesteps * skip_channels), int(timesteps * skip_channels))
         )
         
         self.final_convs_2 = nn.Sequential(
             nn.ReLU(inplace = True),
             WOP.normalisedConv1d(skip_channels, 384, kernel_size = 1),
-            nn.BatchNorm1d(384),
+            nn.Dropout(p = dropout),
             nn.Conv1d(384, out_channels, kernel_size = 1, padding = 'same'),
             # nn.Linear(int(timesteps * out_channels), int(timesteps * out_channels))
         )
@@ -68,7 +68,6 @@ class Wavenet(nn.Module):
                 # assuming we use [0, 1] scaled features
                 # this should avoid non-negative upsampling output
                 self.upsample_conv.append(nn.ReLU(inplace = True))
-                # self.upsample_conv.append(nn.BatchNorm2d(1))
                 
             self.upsample_conv_seq = nn.Sequential(*self.upsample_conv) 
         else:
@@ -93,37 +92,23 @@ class Wavenet(nn.Module):
 
         # B x 1 x C x T
         c = c.unsqueeze(1)
-        # for f in self.upsample_conv:
-        #     c = f(c)
+
         c = self.upsample_conv_seq(c)
         # B x C x T
         c = c.squeeze(1)
-        # print(c.size())
-        # print(x.size())
         assert c.size(-1) == x.size(-1)
         
         # Feed data to network
         x = self.first_conv(x)
-        # x = self.first_conv(x.type(torch.FloatTensor).to(x.get_device()))
         skip = self.skip_conv(x)
         for layer in self.conv_layers:
             x, skip = layer(x, c, skip)
-            # if skips is None:
-            #     skips = h
-            # else:
-            #     skips += h
 
         x = skip
-        # for f in self.final_convs:
-        #     x = f(x)
         x = self.final_convs_1(x)
         x = self.dropout(x)
-        # print(x.size())
-        # x += c
         x = self.final_convs_2(x)
-        x = self.dropout(x)
-
-        # x = nn.functional.softmax(x, dim=1)
+        # x = self.dropout(x)
 
         return x
         
