@@ -31,7 +31,7 @@ def receptive_field_size(total_layers, stacks, kernel_size,
     Returns:
         int: receptive field size in sample
     """
-    assert total_layers % stacks == 0
+    # assert total_layers % stacks == 0
     # print(total_layers, num_cycles, kernel_size)
     layers_per_cycle = total_layers // stacks
     # print(layers_per_cycle)

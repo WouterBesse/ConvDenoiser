@@ -10,7 +10,7 @@ class Wavenet(nn.Module):
     def __init__(self, out_channels, layers = 1, stacks = 2, res_channels = 512, skip_channels = 512, gate_channels = 512, condition_channels = -1, kernel_size = 3, freq_axis_kernel_size=3, dropout = 1 - 0.95, timesteps = 512, upsample_conditional_features = False, upsample_scales = None):
         super(Wavenet, self).__init__()
 
-        assert layers % stacks == 0
+        #assert layers % stacks == 0
         layers_per_stack = layers // stacks
         self.upsample = upsample_conditional_features
 

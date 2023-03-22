@@ -254,6 +254,7 @@ class WaveVaeDataset(Dataset):
             # for noisy, clean in zip(nTrain_dirlist, cTrain_dirlist):
             
             for f in clean_filepaths:
+                #print(f)
                 if os.path.isfile(os.path.join(clean_folder, f)):
                     noise_indices = []
                     noiserange = 1
@@ -270,49 +271,50 @@ class WaveVaeDataset(Dataset):
                         else:
                             noiserange += 1
                     
-                    for i in range(len(noise_indices)):
                         
-                        noisy_audiopath = self.noisy_filepaths[noise_indices[i]]                        
-                        noisy_audiofile, noisy_rate = torchaudio.load(noisy_audiopath)
-                        
-                        clean_audiofile, noisy_audiofile = self.processAudio(clean_audiofile_og, clean_rate_og, noisy_audiofile, noisy_rate)                        
+                    noisy_audiopath = self.noisy_filepaths[noise_indices[0]]                        
+                    noisy_audiofile, noisy_rate = torchaudio.load(noisy_audiopath)
+                   # print(clean_audiopath, noisy_audiopath)
 
-                        i = 256 # Start 256 samples in so it has information about the past
-                           
-                        while i < clean_audiofile.size()[-1] - 256:
-                            
-                            clean_audio = clean_audiofile[:, i - clip_length:i + clip_length]
-                            noisy_audio = noisy_audiofile[:, i - clip_length:i + clip_length]
-                            mfcc = mfcc_trans(clean_audio).squeeze()
+                    clean_audiofile, noisy_audiofile = self.processAudio(clean_audiofile_og, clean_rate_og, noisy_audiofile, noisy_rate)      
+                    #print(clean_audiofile.size(), noisy_audiofile.size())
 
-                            self.clean_files.append(clean_audio)
-                            self.noisy_files.append(noisy_audio)
-                            self.mfccs.append(mfcc)
+                    i = 256 # Start 256 samples in so it has information about the past
 
-                            # Get data for normalisation
-                            au_min = min(torch.min(noisy_audio), torch.min(clean_audio))
-                            au_max = max(torch.max(noisy_audio), torch.max(clean_audio))
-                            self.au_min, self.au_max = self.getMinMax(au_min, au_max, self.au_min, self.au_max)
+                    while i < clean_audiofile.size()[-1] - 256:
 
-                            sp_min = torch.min(mfcc)
-                            sp_max = torch.max(mfcc)
-                            self.sp_min, self.sp_max = self.getMinMax(sp_min, sp_max, self.sp_min, self.sp_max)
+                        clean_audio = clean_audiofile[:, i - clip_length:i + clip_length]
+                        noisy_audio = noisy_audiofile[:, i - clip_length:i + clip_length]
+                        mfcc = mfcc_trans(clean_audio).squeeze()
 
-                            i += 400
+                        self.clean_files.append(clean_audio)
+                        self.noisy_files.append(noisy_audio)
+                        self.mfccs.append(mfcc)
+
+                        # Get data for normalisation
+                        au_min = min(torch.min(noisy_audio), torch.min(clean_audio))
+                        au_max = max(torch.max(noisy_audio), torch.max(clean_audio))
+                        self.au_min, self.au_max = self.getMinMax(au_min, au_max, self.au_min, self.au_max)
+
+                        sp_min = torch.min(mfcc)
+                        sp_max = torch.max(mfcc)
+                        self.sp_min, self.sp_max = self.getMinMax(sp_min, sp_max, self.sp_min, self.sp_max)
+
+                        i += 400
 
                     pbar.set_description(f'Loading files to dataset. Len clean_files =  {len(self.clean_files)}. ')
                     pbar.update(1)
                     
-        self.spmean = torch.stack(self.mfccs).mean()
-        self.spvar = torch.stack(self.mfccs).std()
+        # self.spmean = torch.stack(self.mfccs).mean()
+        # self.spvar = torch.stack(self.mfccs).std()
         
-        self.audiomean = torch.cat((torch.stack(self.noisy_files), torch.stack(self.clean_files)), 0).mean()
-        self.audiovar = torch.cat((torch.stack(self.noisy_files), torch.stack(self.clean_files)), 0).var()
+        # self.audiomean = torch.cat((torch.stack(self.noisy_files), torch.stack(self.clean_files)), 0).mean()
+        # self.audiovar = torch.cat((torch.stack(self.noisy_files), torch.stack(self.clean_files)), 0).var()
         
                     
         print("Samplerate:", self.samplerate)
-        print("Sp mean:", self.spmean, "Sp var:", self.spvar)
-        print("Au mean:", self.audiomean, "Au var:", self.audiovar)
+        # print("Sp mean:", self.spmean, "Sp var:", self.spvar)
+        # print("Au mean:", self.audiomean, "Au var:", self.audiovar)
         
     def processAudio(self, clean_audiofile, clean_rate, noisy_audiofile, noisy_rate):
         snr_dbs = random.randint(2, 13) # Random signal to noise ratio between 2 and 13
@@ -326,7 +328,7 @@ class WaveVaeDataset(Dataset):
             noisy_audiofile = torch.mean(noisy_audiofile, dim=0).unsqueeze(0)
 
         # Make sure both files are same length, if not use one of the two and make the other one zeros to create a fully clean or fully noisy datapoint
-        if noisy_audiofile.size()[-1] >= clean_audiofile.size()[-1]:
+        if noisy_audiofile.size()[-1] <= clean_audiofile.size()[-1]:
             clean_audiofile = clean_audiofile[:, :noisy_audiofile.size()[-1]]
             noisy_audiofile = noisy_audiofile[:, :clean_audiofile.size()[-1]]
             noisy_audiofile = WOP.add_noise(clean_audiofile, noisy_audiofile[:, :clean_audiofile.size()[-1]], torch.Tensor([snr_dbs]))
