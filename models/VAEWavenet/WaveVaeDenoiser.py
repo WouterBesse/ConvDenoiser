@@ -98,7 +98,7 @@ class Encoder(nn.Module):
         self.ReL = nn.ReLU()
         self.batchnorm = nn.BatchNorm1d(hidden_dim)
         self.ReLu = nn.Sequential(
-            nn.ReLU(inplace = True),
+            nn.LeakyReLU(negative_slope=0.1, inplace=True),
             # nn.BatchNorm1d(hidden_dim)
         )
         self.zsize = zsize
@@ -248,7 +248,7 @@ class WaveVaeDataset(Dataset):
         self.sp_min = 99999999999
         self.sp_max = -99999999999
         
-        mfcc_trans = MFCC(33000, 40, log_mels = True, melkwargs={"hop_length": 33}) # Create MFCC in the right samplerate
+        mfcc_trans = MFCC(32000, 40, log_mels = True, melkwargs={"hop_length": 33}) # Create MFCC in the right samplerate
 
         with tqdm(total=len(clean_filepaths), desc=f'Loading files to dataset. Len clean_files =  {len(self.clean_files)}') as pbar:
             # for noisy, clean in zip(nTrain_dirlist, cTrain_dirlist):
@@ -281,10 +281,10 @@ class WaveVaeDataset(Dataset):
 
                     i = 256 # Start 256 samples in so it has information about the past
 
-                    while i < clean_audiofile.size()[-1] - 256:
+                    while i < clean_audiofile.size()[-1] - 1536:
 
-                        clean_audio = clean_audiofile[:, i - clip_length:i + clip_length]
-                        noisy_audio = noisy_audiofile[:, i - clip_length:i + clip_length]
+                        clean_audio = clean_audiofile[:, i - clip_length:i + 1024 + clip_length]
+                        noisy_audio = noisy_audiofile[:, i - clip_length:i + 1024 + clip_length]
                         mfcc = mfcc_trans(clean_audio).squeeze()
 
                         self.clean_files.append(clean_audio)
@@ -308,8 +308,8 @@ class WaveVaeDataset(Dataset):
         # self.spmean = torch.stack(self.mfccs).mean()
         # self.spvar = torch.stack(self.mfccs).std()
         
-        # self.audiomean = torch.cat((torch.stack(self.noisy_files), torch.stack(self.clean_files)), 0).mean()
-        # self.audiovar = torch.cat((torch.stack(self.noisy_files), torch.stack(self.clean_files)), 0).var()
+        self.audiomean = torch.cat((torch.stack(self.noisy_files), torch.stack(self.clean_files)), 0).mean()
+        self.audiovar = torch.cat((torch.stack(self.noisy_files), torch.stack(self.clean_files)), 0).var()
         
                     
         print("Samplerate:", self.samplerate)
@@ -360,8 +360,8 @@ class WaveVaeDataset(Dataset):
         noisy_audio = self.noisy_files[idx]
         mfcc = self.mfccs[idx]
 
-        noisy_audio = (noisy_audio - self.au_min) / (self.au_max - self.au_min)
-        clean_audio = (clean_audio - self.au_min) / (self.au_max - self.au_min)
+        noisy_audio = (noisy_audio - self.audiomean) / math.sqrt(self.audiovar)
+        clean_audio = (clean_audio - self.audiomean) / math.sqrt(self.audiovar)
         
         mfcc = (mfcc - self.sp_min) / (self.sp_max - self.sp_min) # Normalise the spectrum to be between 0 and 1
         

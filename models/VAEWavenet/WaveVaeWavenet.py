@@ -39,17 +39,20 @@ class Wavenet(nn.Module):
                 self.conv_layers.append(resdilconv)
         
         self.final_convs_1 = nn.Sequential(
-            nn.ReLU(inplace = True),
-            WOP.normalisedConv1d(skip_channels, skip_channels, kernel_size = 1),
-            nn.Dropout(p = dropout)
+            WOP.normalisedConv1d(skip_channels, skip_channels, kernel_size = 3),
+            nn.LeakyReLU(negative_slope=0.1, inplace=True),
+            nn.BatchNorm1d(skip_channels),
+            #nn.Dropout(p = dropout)
             # nn.Linear(int(timesteps * skip_channels), int(timesteps * skip_channels))
         )
         
         self.final_convs_2 = nn.Sequential(
-            nn.ReLU(inplace = True),
-            WOP.normalisedConv1d(skip_channels, 384, kernel_size = 1),
-            nn.Dropout(p = dropout),
-            nn.Conv1d(384, out_channels, kernel_size = 1, padding = 'same'),
+            WOP.normalisedConv1d(skip_channels, 384, kernel_size = 3),
+            nn.LeakyReLU(negative_slope=0.1, inplace=True),
+            nn.BatchNorm1d(384),
+            #nn.Dropout(p = dropout),
+            nn.Conv1d(384, out_channels, kernel_size = 3, padding = 'same'),
+            # nn.Tanh()
             # nn.Linear(int(timesteps * out_channels), int(timesteps * out_channels))
         )
 
