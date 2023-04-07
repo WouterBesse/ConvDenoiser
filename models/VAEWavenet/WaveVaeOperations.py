@@ -18,7 +18,20 @@ def CausalConv1d(in_channels, out_channels, kernel_size, dilation=1, **kwargs):
 def dimensionSize(in_size, division):
         return in_size // division
 
+def compute_receptive_field_length(stacks, layers, filter_length, target_field_length):
 
+    half_filter_length = (filter_length-1)/2
+    length = 0
+    
+    for l in range(layers):
+        dilation = 2**l
+        length += dilation*half_filter_length
+    length = 2*length
+    length = stacks * length
+    length += target_field_length
+    return length
+    
+    
 def receptive_field_size(total_layers, stacks, kernel_size,
                          dilation=lambda x: 2**x, target_field_length = 1):
     """Compute receptive field size

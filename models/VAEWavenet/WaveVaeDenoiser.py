@@ -28,8 +28,8 @@ class Decoder(nn.Module):
         if use_jitter:
             self.jitter = WOP.Jitter(jitter_probability)
 
-        self.mulaw = MuLawEncoding(256)
-        self.linear = nn.Linear(int(zsize), int(input_size[1] // 2 * 256))
+        # self.mulaw = MuLawEncoding(256)
+        self.linear = nn.Linear(int(zsize), int(input_size[1] // 2 * hidden_dim))
 
         # self.conv_1 = nn.Conv1d(
         #     in_channels=64,
@@ -47,14 +47,14 @@ class Decoder(nn.Module):
             out_channels = 1,
             layers = 9,
             stacks = 3,
-            res_channels = 256,
-            skip_channels = 256,
-            gate_channels = 256,
-            condition_channels = 256,
+            res_channels = 768,
+            skip_channels = 768,
+            gate_channels = 768,
+            condition_channels = 768,
             kernel_size = 3,
             upsample_conditional_features=True,
             upsample_scales = upsamples, # 768
-            timesteps = 512
+            timesteps = 1024
             #upsample_scales=[2, 2, 2, 2, 12]
         )
 
@@ -89,7 +89,7 @@ class Encoder(nn.Module):
     """
     VAE Encoder
     """    
-    def __init__(self, input_size, hidden_dim = 256, zsize = 128, resblocks = 2, relublocks = 4):
+    def __init__(self, input_size, hidden_dim = 768, zsize = 128, resblocks = 2, relublocks = 4):
         super().__init__()
 
         features, timesteps = input_size
@@ -113,7 +113,7 @@ class Encoder(nn.Module):
         for _ in range(relublocks):
             self.relublocks.append(nn.Conv1d(hidden_dim, hidden_dim, kernel_size = 3, padding='same'))
 
-        self.linear = nn.Linear(int(timesteps // 2 * hidden_dim), int(zsize * 2))
+        self.linear = nn.Linear(int(timesteps // 2 * hidden_dim), int(zsize))
         # print(WOP.dimensionSize(timesteps, 2) * hidden_dim)
         self.flatton = WOP.Flatten()
 
@@ -155,7 +155,8 @@ class Encoder(nn.Module):
         flatx = self.flatton(x)
         zcomb = self.linear(flatx)
 
-        return zcomb[:, :self.zsize], zcomb[:, self.zsize:], x_size
+        # return zcomb[:, :self.zsize], zcomb[:, self.zsize:], x_size
+        return zcomb, x_size
     
 
 class WaveNetVAE(nn.Module):
@@ -165,14 +166,14 @@ class WaveNetVAE(nn.Module):
 
         self.encoder = Encoder(
             input_size = input_size,
-            hidden_dim = 256,
+            hidden_dim = 768,
             zsize = zsize,
             resblocks = resblocks,   
         )
 
         self.decoder = Decoder(
             input_size = input_size,
-            hidden_dim = num_hiddens,
+            hidden_dim = 768,
             dilation_rates = dil_rates,
             out_channels = out_channels,
             upsamples = dil_rates,
@@ -212,12 +213,12 @@ class WaveNetVAE(nn.Module):
             mean (Tensor): Mean of latent space, shape (B x zsize)
             var (Tensor): Variance of latent space, shape (B x zsize)
         """
-        mean, var, xsize = self.encoder(xspec)
-        z = self.sample(mean, var)
+        z, xsize = self.encoder(xspec)
+        # z = self.sample(mean, var)
 
         x_hat = self.decoder(xau, z, xsize, jitter)
         
-        return x_hat, mean, var
+        return x_hat
 
 class WaveVaeDataset(Dataset):
 
@@ -248,7 +249,7 @@ class WaveVaeDataset(Dataset):
         self.sp_min = 99999999999
         self.sp_max = -99999999999
         
-        mfcc_trans = MFCC(32000, 40, log_mels = True, melkwargs={"hop_length": 33}) # Create MFCC in the right samplerate
+        mfcc_trans = MFCC(32000, 40, log_mels = True, melkwargs={"hop_length": 64}) # Create MFCC in the right samplerate
 
         with tqdm(total=len(clean_filepaths), desc=f'Loading files to dataset. Len clean_files =  {len(self.clean_files)}') as pbar:
             # for noisy, clean in zip(nTrain_dirlist, cTrain_dirlist):
@@ -279,28 +280,29 @@ class WaveVaeDataset(Dataset):
                     clean_audiofile, noisy_audiofile = self.processAudio(clean_audiofile_og, clean_rate_og, noisy_audiofile, noisy_rate)      
                     #print(clean_audiofile.size(), noisy_audiofile.size())
 
-                    i = 256 # Start 256 samples in so it has information about the past
+                    i = clip_length # Start 256 samples in so it has information about the past
 
-                    while i < clean_audiofile.size()[-1] - 1536:
+                    while i < clean_audiofile.size()[-1] - 5120:
 
-                        clean_audio = clean_audiofile[:, i - clip_length:i + 1024 + clip_length]
-                        noisy_audio = noisy_audiofile[:, i - clip_length:i + 1024 + clip_length]
+                        clean_audio = clean_audiofile[:, i - clip_length:i + 4096 + clip_length]
+                        noisy_audio = noisy_audiofile[:, i - clip_length:i + 4096 + clip_length]
                         mfcc = mfcc_trans(clean_audio).squeeze()
+                        audiosize = clip_length * 2 + 4096
+                        if clean_audio.size()[-1] == audiosize and noisy_audio.size()[-1] == audiosize:
+                            self.clean_files.append(clean_audio)
+                            self.noisy_files.append(noisy_audio)
+                            self.mfccs.append(mfcc)
 
-                        self.clean_files.append(clean_audio)
-                        self.noisy_files.append(noisy_audio)
-                        self.mfccs.append(mfcc)
+                            # Get data for normalisation
+                            au_min = min(torch.min(noisy_audio), torch.min(clean_audio))
+                            au_max = max(torch.max(noisy_audio), torch.max(clean_audio))
+                            self.au_min, self.au_max = self.getMinMax(au_min, au_max, self.au_min, self.au_max)
 
-                        # Get data for normalisation
-                        au_min = min(torch.min(noisy_audio), torch.min(clean_audio))
-                        au_max = max(torch.max(noisy_audio), torch.max(clean_audio))
-                        self.au_min, self.au_max = self.getMinMax(au_min, au_max, self.au_min, self.au_max)
+                            sp_min = torch.min(mfcc)
+                            sp_max = torch.max(mfcc)
+                            self.sp_min, self.sp_max = self.getMinMax(sp_min, sp_max, self.sp_min, self.sp_max)
 
-                        sp_min = torch.min(mfcc)
-                        sp_max = torch.max(mfcc)
-                        self.sp_min, self.sp_max = self.getMinMax(sp_min, sp_max, self.sp_min, self.sp_max)
-
-                        i += 400
+                        i += 2048
 
                     pbar.set_description(f'Loading files to dataset. Len clean_files =  {len(self.clean_files)}. ')
                     pbar.update(1)
