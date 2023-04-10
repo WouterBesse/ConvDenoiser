@@ -302,7 +302,7 @@ class WaveVaeDataset(Dataset):
                             sp_max = torch.max(mfcc)
                             self.sp_min, self.sp_max = self.getMinMax(sp_min, sp_max, self.sp_min, self.sp_max)
 
-                        i += 2048
+                        i += 4096
 
                     pbar.set_description(f'Loading files to dataset. Len clean_files =  {len(self.clean_files)}. ')
                     pbar.update(1)
