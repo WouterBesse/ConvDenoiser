@@ -14,8 +14,19 @@ class Wavenet(nn.Module):
         layers_per_stack = layers // stacks
         self.upsample = upsample_conditional_features
 
-        self.first_conv = WOP.normalisedConv1d(1, res_channels, kernel_size=1, padding=0, dilation=1, bias=True, std_mul=1.0)
-        self.skip_conv = WOP.normalisedConv1d(res_channels, res_channels, kernel_size=1, padding=0, dilation=1, bias=True, std_mul=1.0)
+        self.first_conv = WOP.Conv1dWrap(in_channels = 1, 
+                                         out_channels = res_channels, 
+                                         kernel_size=1, 
+                                         padding=0, 
+                                         dilation=1,
+                                         bias=True)
+        
+        self.skip_conv = WOP.Conv1dWrap(in_channels = res_channels, 
+                                        out_channels = res_channels, 
+                                        kernel_size=1, 
+                                        padding=0, 
+                                        dilation=1,
+                                        bias=True)
 
         # Wavenet layers
         dilation = 1
@@ -35,37 +46,27 @@ class Wavenet(nn.Module):
                     skip_out_channels = skip_channels,
                     cin_channels = condition_channels,
                     dilation = dilation,
-                    dropout = dropout,
-                    weight_normalisation = True,
+                    dropout = dropout
                 )
                 self.conv_layers.append(resdilconv)
         
         self.final_convs_1 = nn.Sequential(
-            WOP.normalisedConv1d(skip_channels, 1024, kernel_size = 3),
+            WOP.Conv1dWrap(in_channels = skip_channels, out_channels = 1024, kernel_size = 3),
             nn.LeakyReLU(negative_slope=0.1, inplace=True),
             nn.BatchNorm1d(1024),
-            #nn.Dropout(p = dropout)
-            # nn.Linear(int(timesteps * skip_channels), int(timesteps * skip_channels))
         )
         
         self.final_convs_2 = nn.Sequential(
-            WOP.normalisedConv1d(1024, 512, kernel_size = 1),
+            WOP.Conv1dWrap(in_channels = 1024, out_channels = 512, kernel_size = 1),
             nn.LeakyReLU(negative_slope=0.1, inplace=True),
             nn.BatchNorm1d(512),
-            #nn.Dropout(p = dropout),
-            # nn.Conv1d(512, 256, kernel_size = 3, padding = 'same'),
-            # nn.Tanh()
-            # nn.Linear(int(timesteps * out_channels), int(timesteps * out_channels))
         )
         
         self.final_convs_3 = nn.Sequential(
-            WOP.normalisedConv1d(512, 256, kernel_size = 1),
+            WOP.Conv1dWrap(in_channels = 512, out_channels = 256, kernel_size = 1),
             nn.LeakyReLU(negative_slope=0.1, inplace=True),
             nn.BatchNorm1d(256),
-            #nn.Dropout(p = dropout),
-            nn.Conv1d(256, out_channels, kernel_size = 1, padding = 'same', bias=True),
-            # nn.Tanh()
-            # nn.Linear(int(timesteps * out_channels), int(timesteps * out_channels))
+            WOP.Conv1dWrap(in_channels = 256, out_channels = out_channels, kernel_size = 1, padding = 'same', bias=True)
         )
 
 
@@ -123,10 +124,8 @@ class Wavenet(nn.Module):
 
         x = skip
         x = self.final_convs_1(x)
-        # x = self.dropout(x)
         x = self.final_convs_2(x)
         x = self.final_convs_3(x)
-        # x = self.dropout(x)
 
         return x
         

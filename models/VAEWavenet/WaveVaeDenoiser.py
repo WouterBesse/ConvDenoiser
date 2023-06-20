@@ -3,6 +3,7 @@ import torch
 from torch import nn, from_numpy
 from torch.utils.data import Dataset
 from torchaudio.transforms import MuLawEncoding, MFCC, Resample
+from torchaudio.functional import compute_deltas
 import torchaudio.functional as AF
 import torchaudio
 import models.VAEWavenet.WaveVaeOperations as WOP
@@ -28,29 +29,22 @@ class Decoder(nn.Module):
         if use_jitter:
             self.jitter = WOP.Jitter(jitter_probability)
 
-        # self.mulaw = MuLawEncoding(256)
-        self.linear = nn.Linear(int(zsize), int(input_size[1] // 2 * hidden_dim))
-
-        # self.conv_1 = nn.Conv1d(
-        #     in_channels=64,
-        #     out_channels=768,
-        #     kernel_size=2,
-        #     stride=1,
-        #     padding=0
-        # )
-
-        if use_kaiming_normal:
-            self.conv_1 = nn.utils.weight_norm(self.conv_1)
-            nn.init.kaiming_normal_(self.conv_1.weight)
+        self.conv_1 = WOP.Conv1dWrap(
+            in_channels=zsize,
+            out_channels=256,
+            kernel_size=3,
+            stride=1,
+            padding=0
+        )
 
         self.wavenet = WaveNet.Wavenet(
             out_channels = 1,
             layers = 9,
             stacks = 3,
-            res_channels = 768,
-            skip_channels = 768,
-            gate_channels = 768,
-            condition_channels = 768,
+            res_channels = 256,
+            skip_channels = 256,
+            gate_channels = 512,
+            condition_channels = 256,
             kernel_size = 3,
             upsample_conditional_features=True,
             upsample_scales = upsamples, # 768
@@ -58,10 +52,7 @@ class Decoder(nn.Module):
             #upsample_scales=[2, 2, 2, 2, 12]
         )
 
-
-        features, timesteps = input_size
-
-    def forward(self, x, cond, xsize, jitter):
+    def forward(self, x, cond, jitter):
         """Forward step
         Args:
             x (Tensor): Mono audio signal, shape (B x 1 x T)
@@ -72,15 +63,10 @@ class Decoder(nn.Module):
         Returns:
             X (Tensor): Denoised result, shape (B x 1 x T)
         """
-        cond = self.linear(cond)
-        condition = cond.view(xsize)
         if self.use_jitter and jitter:
-            condition = self.jitter(condition)
-        # print(x.size())
+            condition = self.jitter(cond)
 
-        # condition = self.conv_1(cond)
-
-        # labels = self.mulaw(x)
+        condition = self.conv_1(cond)
         x = self.wavenet(x, condition)
 
         return x
@@ -93,29 +79,43 @@ class Encoder(nn.Module):
         super().__init__()
 
         features, timesteps = input_size
-        self.prenet = nn.Conv1d(features, hidden_dim, kernel_size = 3, padding='same')
-        self.preconv = nn.Conv1d(features, hidden_dim, kernel_size = 3, padding='same')
-        self.ReL = nn.ReLU()
+        self.prenet = WOP.Conv1dWrap(in_channels = features, 
+                                     out_channels = hidden_dim, 
+                                     kernel_size = 3, 
+                                     padding = 'same')
+        
+        self.preconv = WOP.Conv1dWrap(in_channels = features, 
+                                      out_channels = hidden_dim, 
+                                      kernel_size = 3, 
+                                      padding='same')
+        self.ReLU = nn.LeakyReLU(negative_slope=0.1, inplace=True)
         self.batchnorm = nn.BatchNorm1d(hidden_dim)
-        self.ReLu = nn.Sequential(
-            nn.LeakyReLU(negative_slope=0.1, inplace=True),
-            # nn.BatchNorm1d(hidden_dim)
-        )
+
         self.zsize = zsize
 
-        self.downsample = nn.Conv1d(hidden_dim, hidden_dim, kernel_size = 4, stride = 2, padding = 1)
+        self.downsample = WOP.Conv1dWrap(in_channels = hidden_dim, 
+                                         out_channels = hidden_dim, 
+                                         kernel_size = 4, 
+                                         stride = 2, 
+                                         padding = 1)
         
         self.resblocks = nn.ModuleList()
         for _ in range(resblocks):
-            self.resblocks.append(nn.Conv1d(hidden_dim, hidden_dim, kernel_size = 3, padding='same'))
+            self.resblocks.append(WOP.Conv1dWrap(in_channels = hidden_dim, 
+                                                 out_channels = hidden_dim, 
+                                                 kernel_size = 3, 
+                                                 padding='same'))
 
         self.relublocks = nn.ModuleList()
         for _ in range(relublocks):
-            self.relublocks.append(nn.Conv1d(hidden_dim, hidden_dim, kernel_size = 3, padding='same'))
+            self.relublocks.append(WOP.Conv1dWrap(in_channels = hidden_dim, 
+                                                  out_channels = hidden_dim, 
+                                                  kernel_size = 3, 
+                                                  padding='same'))
 
-        self.linear = nn.Linear(int(timesteps // 2 * hidden_dim), int(zsize))
-        # print(WOP.dimensionSize(timesteps, 2) * hidden_dim)
-        self.flatton = WOP.Flatten()
+        self.linear = WOP.Conv1dWrap(in_channels = hidden_dim, 
+                                     out_channels = zsize * 2, 
+                                     kernel_size = 1)
 
 
     def forward(self, x):
@@ -130,33 +130,28 @@ class Encoder(nn.Module):
         # Preprocessing conv with residual connections
         net = self.prenet(x)
         conv = self.preconv(x)
-        x = self.ReL(net) + self.ReL(conv)
+        x = self.ReLU(net) + self.ReLU(conv)
         # x = self.batchnorm(x)
-        
-        
-
         # Downsample
-        x = self.ReLu(self.downsample(x))
+        x = self.ReLU(self.downsample(x))
 
         # Residual convs
         for resblock in self.resblocks:
-            xres = self.ReLu(resblock(x))
+            xres = self.ReLU(resblock(x))
             x = xres + x
 
         # Relu blocks
         for relblock in self.relublocks:
-            xrelu = self.ReLu(relblock(x))
+            xrelu = self.ReLU(relblock(x))
             x = xrelu + xrelu
 
         # Flatten into latent space
         # self.
-        x_size = x.size()
 
-        flatx = self.flatton(x)
-        zcomb = self.linear(flatx)
+        zcomb = self.linear(x)
 
-        # return zcomb[:, :self.zsize], zcomb[:, self.zsize:], x_size
-        return zcomb, x_size
+        return zcomb[:, :self.zsize], zcomb[:, self.zsize:]
+        # return zcomb
     
 
 class WaveNetVAE(nn.Module):
@@ -180,21 +175,12 @@ class WaveNetVAE(nn.Module):
             zsize = zsize
         )
         
-        self.mulaw = MuLawEncoding()
         self.N = torch.distributions.Normal(0, 1)
         # self.N.loc = self.N.loc.cuda() # hack to get sampling on the GPU
         # self.N.scale = self.N.scale.cuda()
         
-        
-    def sample(self, mu, logvar):
-        std = logvar.mul(0.5).exp()
-        # return torch.normal(mu, std)
-        # eps = torch.randn(*mu.size()).to(mu.get_device())
-        eps = self.N.sample(mu.shape).to(mu.get_device())
-        z = mu + std * eps
-        return z
     
-    def samplenew(self, mu, logvar):
+    def sample(self, mu, logvar):
         if self.training:
             z = torch.randn_like(mu).mul(torch.exp(0.5*logvar)).add_(mu)
         else:
@@ -213,12 +199,12 @@ class WaveNetVAE(nn.Module):
             mean (Tensor): Mean of latent space, shape (B x zsize)
             var (Tensor): Variance of latent space, shape (B x zsize)
         """
-        z, xsize = self.encoder(xspec)
-        # z = self.sample(mean, var)
+        mean, var = self.encoder(xspec)
+        z = self.sample(mean, var)
 
-        x_hat = self.decoder(xau, z, xsize, jitter)
+        x_hat = self.decoder(xau, z, jitter)
         
-        return x_hat
+        return x_hat, mean, var
 
 class WaveVaeDataset(Dataset):
 
@@ -249,7 +235,7 @@ class WaveVaeDataset(Dataset):
         self.sp_min = 99999999999
         self.sp_max = -99999999999
         
-        mfcc_trans = MFCC(32000, 40, log_mels = True, melkwargs={"hop_length": 64}) # Create MFCC in the right samplerate
+        mfcc_trans = MFCC(32000, 20, log_mels = True, melkwargs={"hop_length": 105}) # Create MFCC in the right samplerate
 
         with tqdm(total=len(clean_filepaths), desc=f'Loading files to dataset. Len clean_files =  {len(self.clean_files)}') as pbar:
             # for noisy, clean in zip(nTrain_dirlist, cTrain_dirlist):
@@ -287,6 +273,8 @@ class WaveVaeDataset(Dataset):
                         clean_audio = clean_audiofile[:, i - clip_length:i + 4096 + clip_length]
                         noisy_audio = noisy_audiofile[:, i - clip_length:i + 4096 + clip_length]
                         mfcc = mfcc_trans(clean_audio).squeeze()
+                        mfcc_delta = compute_deltas(mfcc)
+                        mfcc = torch.concatenate((mfcc, mfcc_delta), dim=0)
                         audiosize = clip_length * 2 + 4096
                         if clean_audio.size()[-1] == audiosize and noisy_audio.size()[-1] == audiosize:
                             self.clean_files.append(clean_audio)

@@ -61,6 +61,23 @@ def receptive_field_size(total_layers, stacks, kernel_size,
     
     return length
 
+def xaviern_init(mod):
+    if hasattr(mod, 'weight') and mod.weight is not None:
+        nn.init.xavier_normal_(mod.weight, gain=nn.init.calculate_gain(mod.activation) if hasattr(mod, 'activation') else 1.0)
+    if hasattr(mod, 'bias') and mod.bias is not None:
+        mod.bias.data.zero_()
+
+
+class Conv1dWrap(nn.Conv1d):
+    """
+    Simple wrapper that ensures initialization
+    Source: https://github.com/hrbigelow/ae-wavenet/blob/master/wavenet.py#L167
+    """
+    def __init__(self, activation='leaky_relu', **kwargs):
+        super(Conv1dWrap, self).__init__(**kwargs)
+        self.activation = activation
+        self.apply(xaviern_init)
+
 
 """
 Torch Modules
@@ -129,13 +146,6 @@ class Jitter(nn.Module):
 
         return quantized
 
-def normalisedConv1d(in_channels, out_channels, kernel_size, dropout=0.05, std_mul=4.0, **kwargs):
-    m = nn.Conv1d(in_channels, out_channels, kernel_size, **kwargs)
-    std = math.sqrt((std_mul * (1.0 - dropout)) / (m.kernel_size[0] * in_channels))
-    m.weight.data.normal_(mean=0, std=std)
-    m.bias.data.zero_()
-    return nn.utils.weight_norm(m)
-
 def normalisedConvTranspose2d(in_channels, out_channels, kernel_size,
                     weight_normalization=True, **kwargs):
     freq_axis_kernel_size = kernel_size[0]
@@ -147,24 +157,9 @@ def normalisedConvTranspose2d(in_channels, out_channels, kernel_size,
     else:
         return m
 
-def CustomConv1D(in_channels, out_channels, kernel_size, stride=1, padding=0, use_kaiming_normal=False):
-        conv = nn.Conv1d(
-            in_channels=in_channels,
-            out_channels=out_channels,
-            kernel_size=kernel_size,
-            stride=stride,
-            padding=padding
-        )
-
-        if use_kaiming_normal:
-            conv = nn.utils.weight_norm(conv)
-            nn.init.kaiming_normal_(conv.weight)
-
-        return conv
-
 class ResidualConv1dGLU(nn.Module):
 
-    def __init__(self, residual_channels, gate_channels, kernel_size, skip_out_channels = None, cin_channels = -1, dropout= 1 - 0.95, dilation = 1, causal = True, bias = True, weight_normalisation = True):
+    def __init__(self, residual_channels, gate_channels, kernel_size, skip_out_channels = None, cin_channels = -1, dropout= 1 - 0.95, dilation = 1, bias = False):
         super(ResidualConv1dGLU, self).__init__()
 
         self.dropout = nn.Dropout(p = dropout)
@@ -173,23 +168,34 @@ class ResidualConv1dGLU(nn.Module):
         padding = dilation
         # padding = (kernel_size - 1) * dilation # 2 Kernel padding
 
-        if weight_normalisation:
-            assert bias
-            self.dil_conv = normalisedConv1d(residual_channels, gate_channels, kernel_size,
-                               padding=padding, dilation=dilation,
-                               bias=bias, std_mul=1.0)
-        else:
-            self.dil_conv = nn.Conv1d(residual_channels, gate_channels, kernel_size,
-                                    padding=padding, dilation=dilation,
+        self.dil_conv = Conv1dWrap(in_channels = residual_channels, 
+                                    out_channels = gate_channels, 
+                                    kernel_size = kernel_size,
+                                    padding=padding,
+                                    dilation=dilation,
                                     bias=bias)
 
-        self.conv1cond = normalisedConv1d(cin_channels, gate_channels, kernel_size=1, padding=0, dilation=1, bias=bias, std_mul=1.0)
+
+        self.conv1cond = Conv1dWrap(in_channels = cin_channels, 
+                                    out_channels = gate_channels, 
+                                    kernel_size=1, 
+                                    padding=0, 
+                                    dilation=1, 
+                                    bias=bias)
 
         # conv output is split into two groups
         gate_out_channels = gate_channels // 2
-        self.conv1_out = normalisedConv1d(gate_out_channels, residual_channels, kernel_size = kernel_size, bias=bias, padding = 'same')
-        # self.conv1_skip = normalisedConv1d(gate_out_channels, skip_out_channels, kernel_size = kernel_size, bias=bias, padding = 1)
-        self.conv1_skip = normalisedConv1d(gate_out_channels, skip_out_channels, kernel_size = kernel_size, bias=bias, padding = 'same')
+        self.conv1_out = Conv1dWrap(in_channels = gate_out_channels, 
+                                    out_channels = residual_channels, 
+                                    kernel_size = kernel_size, 
+                                    bias=bias, 
+                                    padding = 'same')
+
+        self.conv1_skip = Conv1dWrap(in_channels = gate_out_channels, 
+                                     out_channels = skip_out_channels, 
+                                     kernel_size = kernel_size, 
+                                     bias=bias, 
+                                     padding = 'same')
         self.splitdim = 1
 
     def forward(self, x, c, skip):
@@ -201,7 +207,6 @@ class ResidualConv1dGLU(nn.Module):
             Tensor: output
         """
         residual = x
-        x = self.dropout(x)
         condition = self.conv1cond(c)
 
         
@@ -210,7 +215,7 @@ class ResidualConv1dGLU(nn.Module):
         a, b = x.split(x.size(self.splitdim) // 2, dim=self.splitdim)
 
         # local conditioning
-        ca, cb = c.split(condition.size(self.splitdim) // 2, dim=self.splitdim)
+        ca, cb = condition.split(condition.size(self.splitdim) // 2, dim=self.splitdim)
         filt, gate = a + ca, b + cb
 
         x = torch.tanh(filt) * torch.sigmoid(gate)
