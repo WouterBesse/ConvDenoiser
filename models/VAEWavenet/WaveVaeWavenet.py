@@ -51,13 +51,13 @@ class Wavenet(nn.Module):
         self.final_convs_1 = nn.Sequential(
             WOP.Conv1dWrap(in_channels = skip_channels, out_channels = 2048, kernel_size = 3),
             nn.LeakyReLU(negative_slope=0.1, inplace=True),
-            nn.BatchNorm1d(1024),
+            nn.BatchNorm1d(2048),
         )
         
         self.final_convs_2 = nn.Sequential(
             WOP.Conv1dWrap(in_channels = 2048, out_channels = 256, kernel_size = 3),
             nn.LeakyReLU(negative_slope=0.1, inplace=True),
-            nn.BatchNorm1d(512),
+            nn.BatchNorm1d(256),
             WOP.Conv1dWrap(in_channels = 256, out_channels = out_channels, kernel_size = 1, padding = 'same')
         )
         
