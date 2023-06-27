@@ -49,23 +49,24 @@ class Wavenet(nn.Module):
                 self.conv_layers.append(resdilconv)
         
         self.final_convs_1 = nn.Sequential(
-            WOP.Conv1dWrap(in_channels = skip_channels, out_channels = 1024, kernel_size = 3),
+            WOP.Conv1dWrap(in_channels = skip_channels, out_channels = 2048, kernel_size = 3),
             nn.LeakyReLU(negative_slope=0.1, inplace=True),
             nn.BatchNorm1d(1024),
         )
         
         self.final_convs_2 = nn.Sequential(
-            WOP.Conv1dWrap(in_channels = 1024, out_channels = 512, kernel_size = 1),
+            WOP.Conv1dWrap(in_channels = 2048, out_channels = 256, kernel_size = 3),
             nn.LeakyReLU(negative_slope=0.1, inplace=True),
             nn.BatchNorm1d(512),
+            WOP.Conv1dWrap(in_channels = 256, out_channels = out_channels, kernel_size = 1, padding = 'same')
         )
         
-        self.final_convs_3 = nn.Sequential(
-            WOP.Conv1dWrap(in_channels = 512, out_channels = 256, kernel_size = 1),
-            # nn.LeakyReLU(negative_slope=0.1, inplace=True),
-            nn.BatchNorm1d(256),
-            WOP.Conv1dWrap(in_channels = 256, out_channels = out_channels, kernel_size = 1, padding = 'same', bias=True)
-        )
+        # self.final_convs_3 = nn.Sequential(
+        #     WOP.Conv1dWrap(in_channels = 1024, out_channels = 256, kernel_size = 1),
+        #     # nn.LeakyReLU(negative_slope=0.1, inplace=True),
+        #     nn.BatchNorm1d(256),
+        #     WOP.Conv1dWrap(in_channels = 256, out_channels = out_channels, kernel_size = 1, padding = 'same', bias=True)
+        # )
 
 
         # Upsample conv net
@@ -90,7 +91,7 @@ class Wavenet(nn.Module):
         self.receptive_field = WOP.receptive_field_size(layers, stacks, kernel_size)
         print("Receptive field = ", self.receptive_field)
 
-    def forward(self, x, c = None, softmax = True):
+    def forward(self, x, c = None):
         """Forward step
         Args:
             x (Tensor): One-hot encoded audio signal, shape (B x C x T)
@@ -123,7 +124,7 @@ class Wavenet(nn.Module):
         x = skip
         x = self.final_convs_1(x)
         x = self.final_convs_2(x)
-        x = self.final_convs_3(x)
+        # x = self.final_convs_3(x)
 
         return x
         
