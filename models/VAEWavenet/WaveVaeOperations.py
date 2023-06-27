@@ -226,7 +226,8 @@ class ResidualConv1dGLU(nn.Module):
 
         # For residual connection
         x = self.conv1_out(x)
-        x = (x + residual) * math.sqrt(0.5)
+        x += residual
+        # x = (x + residual) * math.sqrt(0.5)
         
         return x, skip
 

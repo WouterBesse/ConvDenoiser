@@ -7,7 +7,7 @@ import models.VAEWavenet.WaveVaeOperations as WOP
 
 class Wavenet(nn.Module):
 
-    def __init__(self, out_channels, layers = 1, stacks = 2, res_channels = 512, skip_channels = 512, gate_channels = 512, condition_channels = -1, kernel_size = 3, freq_axis_kernel_size=3, dropout = 1 - 0.95, timesteps = 512, upsample_conditional_features = False, upsample_scales = None):
+    def __init__(self, out_channels, layers = 1, stacks = 2, res_channels = 512, skip_channels = 512, gate_channels = 512, condition_channels = -1, kernel_size = 3, freq_axis_kernel_size=3, dropout = 1 - 0.95, upsample_conditional_features = False, upsample_scales = None):
         super(Wavenet, self).__init__()
 
         #assert layers % stacks == 0
@@ -30,9 +30,7 @@ class Wavenet(nn.Module):
 
         # Wavenet layers
         dilation = 1
-        
         receptive_field = 1
-        self.dropout = nn.Dropout(p = dropout)
         
         self.conv_layers = nn.ModuleList()
         for stack in range(stacks):
@@ -64,7 +62,7 @@ class Wavenet(nn.Module):
         
         self.final_convs_3 = nn.Sequential(
             WOP.Conv1dWrap(in_channels = 512, out_channels = 256, kernel_size = 1),
-            nn.LeakyReLU(negative_slope=0.1, inplace=True),
+            # nn.LeakyReLU(negative_slope=0.1, inplace=True),
             nn.BatchNorm1d(256),
             WOP.Conv1dWrap(in_channels = 256, out_channels = out_channels, kernel_size = 1, padding = 'same', bias=True)
         )
