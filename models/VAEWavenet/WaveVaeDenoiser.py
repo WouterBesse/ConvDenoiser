@@ -271,7 +271,7 @@ class WaveVaeDataset(Dataset):
 
                         clean_audio = clean_audiofile[:, i - clip_length:i + 4096 + clip_length]
                         noisy_audio = noisy_audiofile[:, i - clip_length:i + 4096 + clip_length]
-                        mfcc = mfcc_trans(clean_audio).squeeze()
+                        mfcc = mfcc_trans(noisy_audio).squeeze()
                         mfcc_delta = compute_deltas(mfcc)
                         mfcc = torch.concatenate((mfcc, mfcc_delta), dim=0)
                         audiosize = clip_length * 2 + 4096
