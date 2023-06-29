@@ -292,7 +292,7 @@ def add_noise(
     energy_signal = torch.linalg.vector_norm(masked_waveform, ord=2, dim=-1) ** 2  # (*,)
     energy_noise = torch.linalg.vector_norm(masked_noise, ord=2, dim=-1) ** 2  # (*,)
     original_snr_db = 10 * (torch.log10(energy_signal) - torch.log10(energy_noise))
-    scale = 10 ** ((original_snr_db - snr) / 20.0)  # (*,)
+    scale = 10 ** ((original_snr_db - snr.cuda()) / 20.0)  # (*,)
 
     # scale noise
     scaled_noise = scale.unsqueeze(-1) * noise  # (*, 1) * (*, L) = (*, L)

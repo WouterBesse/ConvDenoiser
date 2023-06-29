@@ -237,7 +237,7 @@ class WaveVaeDataset(Dataset):
         _, samplerate = torchaudio.load(os.path.join(clean_folder, clean_filepaths[5]))
         print(samplerate)
         
-        mfcc_trans = MFCC(samplerate, 20, log_mels = True, melkwargs={"hop_length": 105}) # Create MFCC in the right samplerate
+        mfcc_trans = MFCC(samplerate, 20, log_mels = True, melkwargs={"hop_length": 105}).cuda() # Create MFCC in the right samplerate
 
         with tqdm(total=len(clean_filepaths), desc=f'Loading files to dataset. Len clean_files =  {len(self.clean_files)}') as pbar:
             # for noisy, clean in zip(nTrain_dirlist, cTrain_dirlist):
@@ -263,22 +263,22 @@ class WaveVaeDataset(Dataset):
                     noisy_audiopath = self.noisy_filepaths[noise_indices[0]]                        
                     noisy_audiofile, noisy_rate = torchaudio.load(noisy_audiopath)
 
-                    clean_audiofile, noisy_audiofile = self.processAudio(clean_audiofile_og, clean_rate_og, noisy_audiofile, noisy_rate)      
+                    clean_audiofile, noisy_audiofile = self.processAudio(clean_audiofile_og.cuda(), clean_rate_og, noisy_audiofile.cuda(), noisy_rate)      
 
-                    i = clip_length # Start 256 samples in so it has information about the past
-
-                    while i < clean_audiofile.size()[-1] - 5120:
+                    for i in range(clip_length, clean_audiofile.size()[-1] - 5120, 4096*2):
 
                         clean_audio = clean_audiofile[:, i - clip_length:i + 4096 + clip_length]
                         noisy_audio = noisy_audiofile[:, i - clip_length:i + 4096 + clip_length]
-                        mfcc = mfcc_trans(noisy_audio).squeeze()
+                        mfcc = mfcc_trans(clean_audio).squeeze()
                         mfcc_delta = compute_deltas(mfcc)
-                        mfcc = torch.concatenate((mfcc, mfcc_delta), dim=0)
+                        mfcc_delta2 = compute_deltas(mfcc_delta)
+                        mfcc = torch.concatenate((mfcc, mfcc_delta, mfcc_delta2), dim=0)
+                        del mfcc_delta, mfcc_delta2 
                         audiosize = clip_length * 2 + 4096
                         if clean_audio.size()[-1] == audiosize and noisy_audio.size()[-1] == audiosize:
-                            self.clean_files.append(clean_audio)
-                            self.noisy_files.append(noisy_audio)
-                            self.mfccs.append(mfcc)
+                            self.clean_files.append(clean_audio.cpu())
+                            self.noisy_files.append(noisy_audio.cpu())
+                            self.mfccs.append(mfcc.cpu())
 
                             # Get data for normalisation
                             au_min = min(torch.min(noisy_audio), torch.min(clean_audio))
@@ -289,7 +289,6 @@ class WaveVaeDataset(Dataset):
                             sp_max = torch.max(mfcc)
                             self.sp_min, self.sp_max = self.getMinMax(sp_min, sp_max, self.sp_min, self.sp_max)
 
-                        i += 4096
 
                     pbar.set_description(f'Loading files to dataset. Len clean_files =  {len(self.clean_files)}. ')
                     pbar.update(1)
@@ -304,7 +303,7 @@ class WaveVaeDataset(Dataset):
         snr_dbs = random.randint(2, 13) # Random signal to noise ratio between 2 and 13
 
         # Make samplerate the same
-        resampler = Resample(noisy_rate, clean_rate)
+        resampler = Resample(noisy_rate, clean_rate).cuda()
         noisy_audiofile = resampler(noisy_audiofile)
 
         # Make stereo file mono
@@ -319,7 +318,7 @@ class WaveVaeDataset(Dataset):
         else: # In exceptions add some instances where it's just noise or just clean voice
             noise_or_clean = random.randint(0, 1)
             if noise_or_clean == 0:
-                clean_audiofile = torch.zeros(noisy_audiofile.size())
+                clean_audiofile = torch.zeros(noisy_audiofile.size()).cuda()
             else:
                 noisy_audiofile = clean_audiofile
                 
@@ -334,7 +333,7 @@ class WaveVaeDataset(Dataset):
         if sp_max > total_max:
             total_max = sp_max
 
-        return total_min, total_max
+        return total_min.cpu(), total_max.cpu()
 
     def __len__(self):
         return len(self.clean_files)
