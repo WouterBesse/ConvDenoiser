@@ -3,3 +3,7 @@ exports/
 .ipynb_checkpoints/
 __pycache__/
 runs/
+NewModelsFixed/
+models/__pycache__/
+models/VAEWavenet/__pycache__/
+wandb/
