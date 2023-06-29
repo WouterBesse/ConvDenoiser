@@ -15,6 +15,10 @@ This denoiser is an architecture inspired by three research papers:
 
 Shortly summarized: this model implements a WaveNet variational autoencoder model from the first paper, in this model the WaveNet decoder is modified with changes from paper 2. Then for the training method I first train it on clean cepstra, then lock the decoder and train it on noisy cepstra. This is to ensure it tries to compress only the clean speech data from the cepstrum. This last training part may need some closer inspection to better match the paper though.
 
+### Results
+
+![alt text](https://github.com/WouterBesse/ConvDenoiser/raw/master/results/WaveNetVAE_Results.png "WaveNetVAE Results")
+
 ## Legacy Experiments
 
 ### Standard Convolutional Network with encoder decoder archetecture
