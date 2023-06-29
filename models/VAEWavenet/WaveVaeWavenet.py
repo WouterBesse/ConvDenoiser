@@ -91,7 +91,6 @@ class Wavenet(nn.Module):
         """
 
         B, _, T = x.size()
-        # print(c.size())
 
         # B x 1 x C x T
         c = c.unsqueeze(1)
@@ -99,7 +98,7 @@ class Wavenet(nn.Module):
         c = self.upsample_conv_seq(c)
         # B x C x T
         c = c.squeeze(1)
-        # print(c.size(-1), x.size(-1))
+
         assert c.size(-1) == x.size(-1)
         
         # Feed data to network
@@ -111,7 +110,6 @@ class Wavenet(nn.Module):
         x = skip
         x = self.final_convs_1(x)
         x = self.final_convs_2(x)
-        # x = self.final_convs_3(x)
 
         return x
         
