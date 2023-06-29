@@ -153,7 +153,7 @@ def normalisedConvTranspose2d(in_channels, out_channels, kernel_size,
     m.weight.data.fill_(1.0 / freq_axis_kernel_size)
     m.bias.data.zero_()
     if weight_normalization:
-        return nn.utils.weight_norm(m)
+        return xaviern_init(m)
     else:
         return m
 
