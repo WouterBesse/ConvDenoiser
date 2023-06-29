@@ -18,6 +18,7 @@ Shortly summarized: this model implements a WaveNet variational autoencoder mode
 ## Legacy Experiments
 
 ### Standard Convolutional Network with encoder decoder archetecture
+
 This is a pytorch implementation of a denoising archetecture mimicking the one described in [Thalles Santhos Silva's blog](https://sthalles.github.io/practical-deep-learning-audio-denoising/)
 It generates new Cepstrum frames based on the previous 7 frames + the current frame.
 
@@ -25,8 +26,12 @@ Unfortunately, this doesn't sound that good.
 
 
 #### Results
-![alt text](https://github.com/WouterBesse/ConvDenoiser/raw/master/results/NoisySP.png "Noisy MFCC") ![alt text](https://github.com/WouterBesse/ConvDenoiser/raw/master/results/DenoisedSP_CNN.png "CNN Denoised MFCC")
 
+Noisy MFCC             |  CNN Denoised MFCC
+:-------------------------:|:-------------------------:
+![alt text](https://github.com/WouterBesse/ConvDenoiser/raw/master/results/NoisySP.png "Noisy MFCC") |  ![alt text](https://github.com/WouterBesse/ConvDenoiser/raw/master/results/DenoisedSP_CNN.png "CNN Denoised MFCC")
+
+---
 ### 2D WaveNet archetecture
 This is a pytorch implementation of a WaveNet archetecture like the one described in [the paper from Merlijn Blaauw](https://arxiv.org/abs/1704.03809) and [the implementation from Seanie Zhao](https://github.com/seaniezhao/torch_npss).
 It generates a mixed gaussian distribution for every frame and stitches these together.
@@ -35,10 +40,15 @@ It uses the noisy Mel Cepstrum as condition that is fed into the system at every
 This also doesn't sound to good.
 
 #### Results
-![alt text](https://github.com/WouterBesse/ConvDenoiser/raw/master/results/NoisySP.png "Noisy MFCC") ![alt text](https://github.com/WouterBesse/ConvDenoiser/raw/master/results/DenoisedSP_WaveNet.png "WaveNet Denoised MFCC")
+Noisy MFCC             |  WaveNet Denoised MFCC
+:-------------------------:|:-------------------------:
+![alt text](https://github.com/WouterBesse/ConvDenoiser/raw/master/results/NoisySP.png "Noisy MFCC") |   ![alt text](https://github.com/WouterBesse/ConvDenoiser/raw/master/results/DenoisedSP_WaveNet.png "WaveNet Denoised MFCC")
 
+---
 ### AutoEncoder
 This is a simple variational autoencoder model.
 
 #### Results
-![alt text](https://github.com/WouterBesse/ConvDenoiser/raw/master/results/NoisySP.png "Noisy MFCC") ![alt text](https://github.com/WouterBesse/ConvDenoiser/raw/master/results/DenoisedSP_AE.png "AE Denoised MFCC")
+Noisy MFCC             |  AE Denoised MFCC
+:-------------------------:|:-------------------------:
+![alt text](https://github.com/WouterBesse/ConvDenoiser/raw/master/results/NoisySP.png "Noisy MFCC") |   ![alt text](https://github.com/WouterBesse/ConvDenoiser/raw/master/results/DenoisedSP_AE.png "AE Denoised MFCC")
