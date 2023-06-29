@@ -22,6 +22,7 @@ It is important to note, however, that I am still in the testing phase of this m
 
 
 ![alt text](https://github.com/WouterBesse/ConvDenoiser/raw/master/results/WaveNetVAE_Results.png "WaveNetVAE Results")
+Just as a little legend I forgot to add: the left MFCC is the noisy audio, the center MFCC is the denoised result, and the right MFCC is the original clean MFCC.
 
 ## Legacy Experiments
 
