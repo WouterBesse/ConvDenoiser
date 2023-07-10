@@ -1,18 +1,15 @@
 import math
 import torch
-from torch import nn, from_numpy
+from torch import nn
 from torch.utils.data import Dataset
-from torchaudio.transforms import MuLawEncoding, MFCC, Resample
+from torchaudio.transforms import MFCC, Resample
 from torchaudio.functional import compute_deltas
-import torchaudio.functional as AF
 import torchaudio
 import models.VAEWavenet.WaveVaeOperations as WOP
 import models.VAEWavenet.WaveVaeWavenet as WaveNet
 from tqdm import tqdm
-import librosa
 import random
 import numpy as np
-import soundfile as sf
 import os
 
 class Decoder(nn.Module):
@@ -38,7 +35,7 @@ class Decoder(nn.Module):
 
         self.wavenet = WaveNet.Wavenet(
             out_channels = 1,
-            layers = 9,
+            layers = 12,
             stacks = 3,
             res_channels = 256,
             skip_channels = 256,
@@ -80,12 +77,14 @@ class Encoder(nn.Module):
         self.prenet = WOP.Conv1dWrap(in_channels = features, 
                                      out_channels = hidden_dim, 
                                      kernel_size = 3, 
-                                     padding = 'same')
+                                     padding = 'same',
+                                     bias = False)
         
         self.preconv = WOP.Conv1dWrap(in_channels = features, 
                                       out_channels = hidden_dim, 
                                       kernel_size = 3, 
-                                      padding='same')
+                                      padding='same',
+                                      bias = False)
         self.ReLU = nn.LeakyReLU(negative_slope=0.1, inplace=True)
 
         self.zsize = zsize
@@ -94,21 +93,24 @@ class Encoder(nn.Module):
                                          out_channels = hidden_dim, 
                                          kernel_size = 4, 
                                          stride = 2, 
-                                         padding = 1)
+                                         padding = 1,
+                                         bias = False)
         
         self.resblocks = nn.ModuleList()
         for _ in range(resblocks):
             self.resblocks.append(WOP.Conv1dWrap(in_channels = hidden_dim, 
                                                  out_channels = hidden_dim, 
                                                  kernel_size = 3, 
-                                                 padding='same'))
+                                                 padding='same'),
+                                                 bias = False)
 
         self.relublocks = nn.ModuleList()
         for _ in range(relublocks):
             self.relublocks.append(WOP.Conv1dWrap(in_channels = hidden_dim, 
                                                   out_channels = hidden_dim, 
                                                   kernel_size = 3, 
-                                                  padding='same'))
+                                                  padding='same'),
+                                                  bias = False)
 
         self.linear = WOP.Conv1dWrap(in_channels = hidden_dim, 
                                      out_channels = zsize * 2, 
@@ -203,7 +205,7 @@ class WaveNetVAE(nn.Module):
 
 class WaveVaeDataset(Dataset):
 
-    def __init__(self, clean_folder, noisy_folder, clip_length = 512, clips = 1, one_hot=True):
+    def __init__(self, clean_folder, noisy_folder, clip_length = 512, clips = 1, sr = 32000):
         super(WaveVaeDataset, self).__init__()
         """
         Dataset for the WaveVAE model
@@ -216,8 +218,6 @@ class WaveVaeDataset(Dataset):
         self.clean_files = []
         self.noisy_files = []
         self.mfccs = []
-        self.samplerate = 0
-        self.one_hot = one_hot
         
         print("Collecting filepaths")
         clean_filepaths = os.listdir(clean_folder)
@@ -232,9 +232,12 @@ class WaveVaeDataset(Dataset):
         self.sp_min = 99999999999
         self.sp_max = -99999999999
 
-        _, samplerate = torchaudio.load(os.path.join(clean_folder, clean_filepaths[5]))
+        _, clean_samplerate = torchaudio.load(os.path.join(clean_folder, clean_filepaths[5]))
+        _, noisy_samplerate = torchaudio.load(os.path.join(noisy_folder, self.noisy_filepaths[5]))
+        self.clean_resampler = Resample(clean_samplerate, sr).cuda()
+        self.noisy_resampler = Resample(noisy_samplerate, sr).cuda()
         
-        mfcc_trans = MFCC(samplerate, 20, log_mels = True, melkwargs={"hop_length": 105}).cuda() # Create MFCC in the right samplerate
+        self.mfcc_trans = MFCC(sr, 20, log_mels = True, melkwargs={"hop_length": 105}).cuda() # Create MFCC in the right samplerate
 
         with tqdm(total=len(clean_filepaths), desc=f'Loading files to dataset. Len clean_files =  {len(self.clean_files)}') as pbar:
             
@@ -245,8 +248,6 @@ class WaveVaeDataset(Dataset):
                     
                     # Load clean file
                     clean_audiopath = os.path.join(clean_folder, f)
-                    clean_audiofile_og, clean_rate_og = torchaudio.load(clean_audiopath)
-                    self.samplerate = clean_rate_og
                     
                     # CURRENTLY NOT USED - WILL ONLY USE 1 NOISE FILE
                     for r in range(noiserange): # Choose a random noise file 3 times, to create 3 copies of the same voice with different noise profiles
@@ -258,23 +259,22 @@ class WaveVaeDataset(Dataset):
                     # MIGHT ENABLE IN THE FUTURE AGAIN
 
                     noisy_audiopath = self.noisy_filepaths[noise_indices[0]]                        
-                    noisy_audiofile, noisy_rate = torchaudio.load(noisy_audiopath)
 
-                    clean_audiofile, noisy_audiofile = self.processAudio(clean_audiofile_og.cuda(), clean_rate_og, noisy_audiofile.cuda(), noisy_rate)      
+                    noisy_audiofile, clean_audiofile_og = self.loadFiles(clean_audiopath, noisy_audiopath)
+
+                    clean_audiofile, noisy_audiofile = self.processAudio(clean_audiofile_og.cuda(), noisy_audiofile.cuda())      
 
                     for i in range(clip_length, clean_audiofile.size()[-1] - 5120, 4096*2):
 
                         clean_audio = clean_audiofile[:, i - clip_length:i + 4096 + clip_length]
                         noisy_audio = noisy_audiofile[:, i - clip_length:i + 4096 + clip_length]
 
-                        mfcc = mfcc_trans(clean_audio).squeeze()
-                        mfcc_delta = compute_deltas(mfcc)
-                        mfcc_delta2 = compute_deltas(mfcc_delta)
-                        mfcc = torch.concatenate((mfcc, mfcc_delta, mfcc_delta2), dim=0)
-                        del mfcc_delta, mfcc_delta2 
+                        mfcc = self.getMFCC(clean_audio)
                         
                         audiosize = clip_length * 2 + 4096
                         if clean_audio.size()[-1] == audiosize and noisy_audio.size()[-1] == audiosize:
+
+                            # Add to lists
                             self.clean_files.append(clean_audio.cpu())
                             self.noisy_files.append(noisy_audio.cpu())
                             self.mfccs.append(mfcc.cpu())
@@ -298,12 +298,13 @@ class WaveVaeDataset(Dataset):
                     
         print("Samplerate:", self.samplerate)
         
-    def processAudio(self, clean_audiofile, clean_rate, noisy_audiofile, noisy_rate):
-        snr_dbs = random.randint(2, 13) # Random signal to noise ratio between 2 and 13
+    def processAudio(self, clean_audiofile, noisy_audiofile):
+        snr_dbs = random.randint(2, 15) # Random signal to noise ratio between 2 and 13
 
         # Make samplerate the same
-        resampler = Resample(noisy_rate, clean_rate).cuda()
-        noisy_audiofile = resampler(noisy_audiofile)
+        
+        noisy_audiofile = self.noisy_resampler(noisy_audiofile)
+        clean_audiofile = self.clean_resampler(clean_audiofile)
 
         # Make stereo file mono
         if noisy_audiofile.size()[0] == 2:
@@ -323,6 +324,20 @@ class WaveVaeDataset(Dataset):
                 
         return clean_audiofile, noisy_audiofile
     
+    def loadFiles(self, clean_path, noisy_path):
+        clean_audio, _ = torchaudio.load(clean_path)
+        noisy_audio, _ = torchaudio.load(noisy_path)
+
+        return clean_audio, noisy_audio
+    
+    def getMFCC(self, audio):
+        mfcc = self.mfcc_trans(audio).squeeze()
+        mfcc_delta = compute_deltas(mfcc)
+        mfcc_delta2 = compute_deltas(mfcc_delta)
+        mfcc = torch.concatenate((mfcc, mfcc_delta, mfcc_delta2), dim=0)
+
+        return mfcc
+
     def getMinMax(self, sp_min, sp_max, total_min, total_max):
         total_min = total_min
         total_max = total_max
