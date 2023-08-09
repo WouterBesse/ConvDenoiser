@@ -81,7 +81,7 @@ class Wavenet(nn.Module):
     def forward(self, x, c = None):
         """Forward step
         Args:
-            x (Tensor): One-hot encoded audio signal, shape (B x C x T)
+            x (Tensor): Audio signal, shape (B x C x T)
             c (Tensor): Local conditioning features,
               shape (B x cin_channels x T)
               Also type of input tensor must be FloatTensor, not LongTensor
@@ -91,10 +91,10 @@ class Wavenet(nn.Module):
         """
 
         B, _, T = x.size()
-
+        
         # B x 1 x C x T
         c = c.unsqueeze(1)
-
+        
         c = self.upsample_conv_seq(c)
         # B x C x T
         c = c.squeeze(1)
