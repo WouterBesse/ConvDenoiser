@@ -10,6 +10,8 @@ class Wavenet(nn.Module):
     def __init__(self, out_channels, layers = 1, stacks = 2, res_channels = 512, skip_channels = 512, gate_channels = 512, condition_channels = -1, kernel_size = 3, freq_axis_kernel_size=3, dropout = 1 - 0.95, upsample_conditional_features = False, upsample_scales = None):
         super(Wavenet, self).__init__()
 
+        #assert layers % stacks == 0
+        layers_per_stack = layers // stacks
         self.upsample = upsample_conditional_features
 
         self.first_conv = WOP.Conv1dWrap(in_channels = 1, 
@@ -27,7 +29,9 @@ class Wavenet(nn.Module):
                                         bias=True)
 
         # Wavenet layers
-        dilation = 1        
+        dilation = 1
+        receptive_field = 1
+        
         self.conv_layers = nn.ModuleList()
         for stack in range(stacks):
             for layer in range(layers):
@@ -56,8 +60,17 @@ class Wavenet(nn.Module):
             nn.BatchNorm1d(256),
             WOP.Conv1dWrap(in_channels = 256, out_channels = out_channels, kernel_size = 1, padding = 'same')
         )
+        
+        # self.final_convs_3 = nn.Sequential(
+        #     WOP.Conv1dWrap(in_channels = 1024, out_channels = 256, kernel_size = 1),
+        #     # nn.LeakyReLU(negative_slope=0.1, inplace=True),
+        #     nn.BatchNorm1d(256),
+        #     WOP.Conv1dWrap(in_channels = 256, out_channels = out_channels, kernel_size = 1, padding = 'same', bias=True)
+        # )
+
 
         # Upsample conv net
+        # self.upsample_conv_seq = nn.Sequential()
         if upsample_conditional_features:
             self.upsample_conv = []
             for s in upsample_scales:
@@ -69,7 +82,7 @@ class Wavenet(nn.Module):
                 self.upsample_conv.append(convt)
                 # assuming we use [0, 1] scaled features
                 # this should avoid non-negative upsampling output
-                self.upsample_conv.append(nn.LeakyReLU(negative_slope=0.1, inplace = True))
+                self.upsample_conv.append(nn.ReLU(inplace = True))
                 
             self.upsample_conv_seq = nn.Sequential(*self.upsample_conv) 
         else:
@@ -91,6 +104,7 @@ class Wavenet(nn.Module):
         """
 
         B, _, T = x.size()
+        # print(c.size())
 
         # B x 1 x C x T
         c = c.unsqueeze(1)
@@ -98,7 +112,7 @@ class Wavenet(nn.Module):
         c = self.upsample_conv_seq(c)
         # B x C x T
         c = c.squeeze(1)
-
+        # print(c.size(-1), x.size(-1))
         assert c.size(-1) == x.size(-1)
         
         # Feed data to network
@@ -110,6 +124,7 @@ class Wavenet(nn.Module):
         x = skip
         x = self.final_convs_1(x)
         x = self.final_convs_2(x)
+        # x = self.final_convs_3(x)
 
         return x
         

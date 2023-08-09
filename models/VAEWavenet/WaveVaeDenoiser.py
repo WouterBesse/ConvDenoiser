@@ -22,6 +22,7 @@ class Decoder(nn.Module):
     def __init__(self, input_size, hidden_dim, dilation_rates, out_channels, upsamples, zsize = 128, num_cycles = 10, num_cycle_layers = 3, kernel_size = 3, pre_kernel_size = 32, use_jitter = True, jitter_probability = 0.12, use_kaiming_normal = False):
         super().__init__()
 
+        # assert len(dilation_rates) == num_cycles * num_cycle_layers
         self.receptive_field = sum(dilation_rates) * (kernel_size - 1) + pre_kernel_size
 
         self.use_jitter = use_jitter
@@ -87,6 +88,7 @@ class Encoder(nn.Module):
                                       kernel_size = 3, 
                                       padding='same')
         self.ReLU = nn.LeakyReLU(negative_slope=0.1, inplace=True)
+        # self.batchnorm = nn.BatchNorm1d(hidden_dim)
 
         self.zsize = zsize
 
@@ -128,7 +130,7 @@ class Encoder(nn.Module):
         net = self.prenet(x)
         conv = self.preconv(x)
         x = self.ReLU(net) + self.ReLU(conv)
-
+        # x = self.batchnorm(x)
         # Downsample
         x = self.ReLU(self.downsample(x))
 
@@ -142,11 +144,14 @@ class Encoder(nn.Module):
             xrelu = self.ReLU(relblock(x))
             x = x + xrelu
         x = self.ReLU(x)
+        # Flatten into latent space
+        # self.
 
         zcomb = self.linear(x)
         mu, log_var = torch.split(zcomb, self.zsize, dim=1)
 
         return mu, log_var
+        # return zcomb
     
 
 class WaveNetVAE(nn.Module):
@@ -187,10 +192,10 @@ class WaveNetVAE(nn.Module):
         """Forward step
         Args:
             xau (Tensor): Noisy audio, shape (B x 1 x T)
-            xspec (Tensor): Noisy MFCC, shape (B x features x timesteps)
+            xspec (Tensor): Noisy MFCC, shape (B x features x timestpes)
             jitter (Bool): To jitter the latent space condition or not
         Returns:
-            x_hat (Tensor): Denoised audio, shape (B x 1 x T)
+            x_hat (Tensor): Clean audio, shape (B x 1 x T)
             mean (Tensor): Mean of latent space, shape (B x zsize)
             var (Tensor): Variance of latent space, shape (B x zsize)
         """
@@ -205,16 +210,15 @@ class WaveVaeDataset(Dataset):
 
     def __init__(self, clean_folder, noisy_folder, clip_length = 512, clips = 1, one_hot=True):
         super(WaveVaeDataset, self).__init__()
-        """
-        Dataset for the WaveVAE model
-        Will return clean and noisy audio pairs, as well as an MFCC of the clean/noisy audio
-        """
         
         self.clip_length = clip_length
         self.clean_folder = clean_folder
+        self.mulaw = MuLawEncoding()
 
+        # print("Loading clean files")
         self.clean_files = []
         self.noisy_files = []
+        self.pure_noise = []
         self.mfccs = []
         self.samplerate = 0
         self.one_hot = one_hot
@@ -225,20 +229,21 @@ class WaveVaeDataset(Dataset):
         
         self.noisy_filepaths = [os.path.join(noisy_folder, f) for f in os.listdir(noisy_folder) if os.path.isfile(os.path.join(noisy_folder, f))]
         
-        # Min and Max values for normalisation
         self.au_min = 99999999999
         self.au_max = -99999999999
         
         self.sp_min = 99999999999
         self.sp_max = -99999999999
-
         _, samplerate = torchaudio.load(os.path.join(clean_folder, clean_filepaths[5]))
+        print(samplerate)
         
-        mfcc_trans = MFCC(samplerate, 20, log_mels = True, melkwargs={"hop_length": 105}).cuda() # Create MFCC in the right samplerate
+        mfcc_trans = MFCC(samplerate, 20, log_mels = True, melkwargs={"hop_length": 105}) # Create MFCC in the right samplerate
 
         with tqdm(total=len(clean_filepaths), desc=f'Loading files to dataset. Len clean_files =  {len(self.clean_files)}') as pbar:
+            # for noisy, clean in zip(nTrain_dirlist, cTrain_dirlist):
             
             for f in clean_filepaths:
+                #print(f)
                 if os.path.isfile(os.path.join(clean_folder, f)):
                     noise_indices = []
                     noiserange = 1
@@ -248,36 +253,32 @@ class WaveVaeDataset(Dataset):
                     clean_audiofile_og, clean_rate_og = torchaudio.load(clean_audiopath)
                     self.samplerate = clean_rate_og
                     
-                    # CURRENTLY NOT USED - WILL ONLY USE 1 NOISE FILE
                     for r in range(noiserange): # Choose a random noise file 3 times, to create 3 copies of the same voice with different noise profiles
                         noise_selector = random.randint(0, len(self.noisy_filepaths) - 1)
                         if noise_selector not in noise_indices:
                             noise_indices.append(noise_selector)
                         else:
                             noiserange += 1
-                    # MIGHT ENABLE IN THE FUTURE AGAIN
-
+                        
                     noisy_audiopath = self.noisy_filepaths[noise_indices[0]]                        
                     noisy_audiofile, noisy_rate = torchaudio.load(noisy_audiopath)
 
-                    clean_audiofile, noisy_audiofile = self.processAudio(clean_audiofile_og.cuda(), clean_rate_og, noisy_audiofile.cuda(), noisy_rate)      
+                    clean_audiofile, noisy_audiofile = self.processAudio(clean_audiofile_og, clean_rate_og, noisy_audiofile, noisy_rate)      
 
-                    for i in range(clip_length, clean_audiofile.size()[-1] - 5120, 4096*2):
+                    i = clip_length # Start 256 samples in so it has information about the past
+
+                    while i < clean_audiofile.size()[-1] - 5120:
 
                         clean_audio = clean_audiofile[:, i - clip_length:i + 4096 + clip_length]
                         noisy_audio = noisy_audiofile[:, i - clip_length:i + 4096 + clip_length]
-
-                        mfcc = mfcc_trans(clean_audio).squeeze()
+                        mfcc = mfcc_trans(noisy_audio).squeeze()
                         mfcc_delta = compute_deltas(mfcc)
-                        mfcc_delta2 = compute_deltas(mfcc_delta)
-                        mfcc = torch.concatenate((mfcc, mfcc_delta, mfcc_delta2), dim=0)
-                        del mfcc_delta, mfcc_delta2 
-                        
+                        mfcc = torch.concatenate((mfcc, mfcc_delta), dim=0)
                         audiosize = clip_length * 2 + 4096
                         if clean_audio.size()[-1] == audiosize and noisy_audio.size()[-1] == audiosize:
-                            self.clean_files.append(clean_audio.cpu())
-                            self.noisy_files.append(noisy_audio.cpu())
-                            self.mfccs.append(mfcc.cpu())
+                            self.clean_files.append(clean_audio)
+                            self.noisy_files.append(noisy_audio)
+                            self.mfccs.append(mfcc)
 
                             # Get data for normalisation
                             au_min = min(torch.min(noisy_audio), torch.min(clean_audio))
@@ -288,6 +289,7 @@ class WaveVaeDataset(Dataset):
                             sp_max = torch.max(mfcc)
                             self.sp_min, self.sp_max = self.getMinMax(sp_min, sp_max, self.sp_min, self.sp_max)
 
+                        i += 4096
 
                     pbar.set_description(f'Loading files to dataset. Len clean_files =  {len(self.clean_files)}. ')
                     pbar.update(1)
@@ -302,7 +304,7 @@ class WaveVaeDataset(Dataset):
         snr_dbs = random.randint(2, 13) # Random signal to noise ratio between 2 and 13
 
         # Make samplerate the same
-        resampler = Resample(noisy_rate, clean_rate).cuda()
+        resampler = Resample(noisy_rate, clean_rate)
         noisy_audiofile = resampler(noisy_audiofile)
 
         # Make stereo file mono
@@ -317,7 +319,7 @@ class WaveVaeDataset(Dataset):
         else: # In exceptions add some instances where it's just noise or just clean voice
             noise_or_clean = random.randint(0, 1)
             if noise_or_clean == 0:
-                clean_audiofile = torch.zeros(noisy_audiofile.size()).cuda()
+                clean_audiofile = torch.zeros(noisy_audiofile.size())
             else:
                 noisy_audiofile = clean_audiofile
                 
@@ -332,7 +334,7 @@ class WaveVaeDataset(Dataset):
         if sp_max > total_max:
             total_max = sp_max
 
-        return total_min.cpu(), total_max.cpu()
+        return total_min, total_max
 
     def __len__(self):
         return len(self.clean_files)

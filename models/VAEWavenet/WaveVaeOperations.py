@@ -11,6 +11,27 @@ from torchaudio import functional as F
 Util functions
 """    
 
+def CausalConv1d(in_channels, out_channels, kernel_size, dilation=1, **kwargs):
+   pad = (kernel_size - 1) * dilation
+   return nn.Conv1d(in_channels, out_channels, kernel_size, padding=pad, dilation=dilation, **kwargs)
+
+def dimensionSize(in_size, division):
+        return in_size // division
+
+def compute_receptive_field_length(stacks, layers, filter_length, target_field_length):
+
+    half_filter_length = (filter_length-1)/2
+    length = 0
+    
+    for l in range(layers):
+        dilation = 2**l
+        length += dilation*half_filter_length
+    length = 2*length
+    length = stacks * length
+    length += target_field_length
+    return length
+    
+    
 def receptive_field_size(total_layers, stacks, kernel_size,
                          dilation=lambda x: 2**x, target_field_length = 1):
     """Compute receptive field size
@@ -23,9 +44,12 @@ def receptive_field_size(total_layers, stacks, kernel_size,
     Returns:
         int: receptive field size in sample
     """
-
+    # assert total_layers % stacks == 0
+    # print(total_layers, num_cycles, kernel_size)
     layers_per_cycle = total_layers // stacks
+    # print(layers_per_cycle)
     dilations = [dilation(i) for i in range(total_layers)]
+    print(dilations)
     
     half_filter_length = (kernel_size-1)/2
     length = 0
@@ -58,6 +82,27 @@ class Conv1dWrap(nn.Conv1d):
 """
 Torch Modules
 """
+
+class AddCond(nn.Module):
+    
+    def __init__(self):
+        super(AddCond, self).__init__()
+        self.convy = normalisedConv1d(64, res_channels, kernel_size=1, padding=0, dilation=1, bias=False, std_mul=1.0)
+        
+    def forward(self, input, condition):
+        b, out_channels, input_len = input.size()
+        T = condition.size()[-1]
+        encoding = self.convy(condition)
+        
+        net = torch.reshape(net, (b, out_channels, T, input_len // T))
+        net += encoding.unsqueeze(1)
+        net = torch.reshape(net, (b, out_channels, input_len))
+        return net
+
+
+class Flatten(nn.Module):
+    def forward(self, input):
+        return input.view(input.size(0), -1)
 
 class Jitter(nn.Module):
     """
@@ -103,9 +148,6 @@ class Jitter(nn.Module):
 
 def normalisedConvTranspose2d(in_channels, out_channels, kernel_size,
                     weight_normalization=True, **kwargs):
-    """
-    ConvTranspose2d with weight normalization, copied from r9y9's WaveNet implementation
-    """
     freq_axis_kernel_size = kernel_size[0]
     m = nn.ConvTranspose2d(in_channels, out_channels, kernel_size, **kwargs)
     m.weight.data.fill_(1.0 / freq_axis_kernel_size)
@@ -119,12 +161,12 @@ class ResidualConv1dGLU(nn.Module):
 
     def __init__(self, residual_channels, gate_channels, kernel_size, skip_out_channels = None, cin_channels = -1, dropout= 1 - 0.95, dilation = 1, bias = False):
         super(ResidualConv1dGLU, self).__init__()
-        """
-        WaveNet layer, inspired by r9y9's WaveNet implementation
-        """
 
         self.dropout = nn.Dropout(p = dropout)
+#       dilations = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
+        # padding = (kernel_size - 1) * dilation - 1
         padding = dilation
+        # padding = (kernel_size - 1) * dilation # 2 Kernel padding
 
         self.dil_conv = Conv1dWrap(in_channels = residual_channels, 
                                     out_channels = gate_channels, 
@@ -250,7 +292,7 @@ def add_noise(
     energy_signal = torch.linalg.vector_norm(masked_waveform, ord=2, dim=-1) ** 2  # (*,)
     energy_noise = torch.linalg.vector_norm(masked_noise, ord=2, dim=-1) ** 2  # (*,)
     original_snr_db = 10 * (torch.log10(energy_signal) - torch.log10(energy_noise))
-    scale = 10 ** ((original_snr_db - snr.cuda()) / 20.0)  # (*,)
+    scale = 10 ** ((original_snr_db - snr) / 20.0)  # (*,)
 
     # scale noise
     scaled_noise = scale.unsqueeze(-1) * noise  # (*, 1) * (*, L) = (*, L)
