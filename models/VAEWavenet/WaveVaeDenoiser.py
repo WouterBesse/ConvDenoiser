@@ -11,6 +11,7 @@ from tqdm import tqdm
 import random
 import numpy as np
 import os
+import pathlib
 
 class Decoder(nn.Module):
     """
@@ -35,7 +36,7 @@ class Decoder(nn.Module):
 
         self.wavenet = WaveNet.Wavenet(
             out_channels = 1,
-            layers = 13,
+            layers = 12,
             stacks = 3,
             res_channels = 256,
             skip_channels = 256,
@@ -218,7 +219,9 @@ class WaveVaeDataset(Dataset):
         self.mfccs = []
         
         print("Collecting filepaths")
-        clean_filepaths = os.listdir(clean_folder)
+        clean_path = pathlib.Path(clean_folder)
+        clean_filepaths = list(clean_path.rglob("*.wav"))
+        print(clean_filepaths[0])
         clean_filepaths = clean_filepaths[:clips]
         
         self.noisy_filepaths = [os.path.join(noisy_folder, f) for f in os.listdir(noisy_folder) if os.path.isfile(os.path.join(noisy_folder, f))]
@@ -230,8 +233,8 @@ class WaveVaeDataset(Dataset):
         self.sp_min = 99999999999
         self.sp_max = -99999999999
 
-        _, clean_samplerate = torchaudio.load(os.path.join(clean_folder, clean_filepaths[5]))
-        _, noisy_samplerate = torchaudio.load(os.path.join(noisy_folder, self.noisy_filepaths[5]))
+        _, clean_samplerate = torchaudio.load(clean_filepaths[5])
+        _, noisy_samplerate = torchaudio.load(self.noisy_filepaths[5])
         self.clean_resampler = Resample(clean_samplerate, sr).cuda()
         self.noisy_resampler = Resample(noisy_samplerate, sr).cuda()
         
@@ -240,12 +243,13 @@ class WaveVaeDataset(Dataset):
         with tqdm(total=len(clean_filepaths), desc=f'Loading files to dataset. Len clean_files =  {len(self.clean_files)}') as pbar:
             
             for f in clean_filepaths:
-                if os.path.isfile(os.path.join(clean_folder, f)):
+                if os.path.isfile(f):
                     noise_indices = []
                     noiserange = 1
                     
                     # Load clean file
-                    clean_audiopath = os.path.join(clean_folder, f)
+                    # clean_audiopath = os.path.join(clean_folder, f)
+                    clean_audiopath = f
                     
                     # CURRENTLY NOT USED - WILL ONLY USE 1 NOISE FILE
                     for r in range(noiserange): # Choose a random noise file 3 times, to create 3 copies of the same voice with different noise profiles
@@ -292,8 +296,6 @@ class WaveVaeDataset(Dataset):
                     pbar.set_description(f'Loading files to dataset. Len clean_files =  {len(self.clean_files)}. ')
                     pbar.update(1)
         
-        print(self.noisy_files[0].size())
-        print(self.clean_files[0].size())
         self.audiomean = torch.cat((torch.stack(self.noisy_files), torch.stack(self.clean_files)), 0).mean()
         self.audiovar = torch.cat((torch.stack(self.noisy_files), torch.stack(self.clean_files)), 0).var()
         
