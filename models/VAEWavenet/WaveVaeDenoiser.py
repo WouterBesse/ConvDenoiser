@@ -250,6 +250,7 @@ class WaveVaeDataset(Dataset):
                     # Load clean file
                     # clean_audiopath = os.path.join(clean_folder, f)
                     clean_audiopath = f
+                    pbar.set_description(f"Loading files to dataset. Len clean_files =  {len(self.clean_files)}. Filename = {f}")
                     
                     # CURRENTLY NOT USED - WILL ONLY USE 1 NOISE FILE
                     for r in range(noiserange): # Choose a random noise file 3 times, to create 3 copies of the same voice with different noise profiles
@@ -262,11 +263,11 @@ class WaveVaeDataset(Dataset):
 
                     noisy_audiopath = self.noisy_filepaths[noise_indices[0]]                        
 
-                    noisy_audiofile, clean_audiofile_og = self.loadFiles(clean_audiopath, noisy_audiopath)
+                    noisy_audiofile, clean_audiofile_og = self.loadFiles(noisy_audiopath, clean_audiopath)
 
                     clean_audiofile, noisy_audiofile = self.processAudio(clean_audiofile_og.cuda(), noisy_audiofile.cuda())      
 
-                    for i in range(clip_length, clean_audiofile.size()[-1] - 5120, 8192*2):
+                    for i in range(clip_length, clean_audiofile.size()[-1] - 5120, 8192):
 
                         clean_audio = clean_audiofile[:, i - clip_length:i + 8192 + clip_length]
                         noisy_audio = noisy_audiofile[:, i - clip_length:i + 8192 + clip_length]
@@ -293,7 +294,7 @@ class WaveVaeDataset(Dataset):
                             self.sp_min, self.sp_max = self.getMinMax(sp_min, sp_max, self.sp_min, self.sp_max)
 
 
-                    pbar.set_description(f'Loading files to dataset. Len clean_files =  {len(self.clean_files)}. ')
+                    pbar.set_description(f"Loading files to dataset. Len clean_files =  {len(self.clean_files)}. Filename = {f}")
                     pbar.update(1)
         
         self.audiomean = torch.cat((torch.stack(self.noisy_files), torch.stack(self.clean_files)), 0).mean()
@@ -328,11 +329,11 @@ class WaveVaeDataset(Dataset):
                 
         return clean_audiofile, noisy_audiofile
     
-    def loadFiles(self, clean_path, noisy_path):
+    def loadFiles(self, noisy_path, clean_path):
         clean_audio, _ = torchaudio.load(clean_path)
         noisy_audio, _ = torchaudio.load(noisy_path)
 
-        return clean_audio, noisy_audio
+        return noisy_audio, clean_audio
     
     def getMFCC(self, audio):
         mfcc = self.mfcc_trans(audio).squeeze()
