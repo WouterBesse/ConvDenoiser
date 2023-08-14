@@ -5,7 +5,7 @@ In this repo, I'm trying to denoise noisy Mel Cepstrums for resynthesis with a v
 Each method has its' own notebook, ~~they all share the same preprocessing functions.~~
 The data needs to be provided as separate clean speech files and ambience noise files, which it stitches together to make new noisy speech files.
 
-Audio results are available in the results folder.
+**Audio results are available in the results folder.**
 
 ## WaveNet VAE Denoiser
 This denoiser is an architecture inspired by three research papers:
