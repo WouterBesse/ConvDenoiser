@@ -1,4 +1,4 @@
-# Ways of denoising Mel Cepstrums using convolutional networks.
+# Speech Enhancement using CNN's and Speech Features
 
 In this repo, I'm trying to denoise noisy Mel Cepstrums for resynthesis with a vocoder. For this I have three legacy experiments, and one main architecture using a **WaveNet VAE** setup.
 
