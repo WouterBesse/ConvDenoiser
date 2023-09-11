@@ -21,7 +21,7 @@ This model works by extracting a latent representation of speech from an mfcc of
 For this, I implement a WaveNet variational autoencoder model from the first paper. In this model, the WaveNet decoder is modified with some changes from paper 2. Important modifications include removing the causal padding from WaveNet, rendering direct samples and not mu-law quantised samples, and using a padding size of 3 in the WaveNet.
 
 Then for the training method I first train it on clean cepstra with a target of clean audio, then lock the decoder and train it on noisy cepstra with a target of clean audio, like the third paper. This is to ensure it tries to compress only the clean speech data from the cepstrum. This last training part may need some closer inspection to better match the paper though.
-<br/><br/><br/><br/><br/><br/><br/><br/><br/><br/><br/><br/>
+<br/><br/><br/><br/><br/><br/><br/>
 
 ### Results
 I'm pretty with the results so far, they are way better than all my other experiments.
