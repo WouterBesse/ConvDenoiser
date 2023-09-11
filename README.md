@@ -13,7 +13,13 @@ This denoiser is an architecture inspired by three research papers:
 2. [A Wavenet for Speech Denoising](https://arxiv.org/abs/1706.07162)
 3. [Variational Autoencoder for Speech Enhancement with a Noise-Aware Encoder](https://arxiv.org/abs/2102.08706)
 
-Shortly summarized: This model implements a WaveNet variational autoencoder model from the first paper, in this model the WaveNet decoder is modified with changes from paper 2. Then for the training method I first train it on clean cepstra, then lock the decoder and train it on noisy cepstra. This is to ensure it tries to compress only the clean speech data from the cepstrum. This last training part may need some closer inspection to better match the paper though.
+<img src="https://github.com/WouterBesse/ConvDenoiser/raw/master/results/WavenetVAE_Diagram.png" height="600" align="left"/>
+
+### Shortly summarized 
+This model implements a WaveNet variational autoencoder model from the first paper, in this model the WaveNet decoder is modified with changes from paper 2. Important modifications include removing the causal padding from WaveNet, rendering direct samples and not mu-law quantised samples, and using a padding size of 3 in the WaveNet.
+
+Then for the training method I first train it on clean cepstra with a target of clean audio, then lock the decoder and train it on noisy cepstra with a target of clean audio, like the third paper. This is to ensure it tries to compress only the clean speech data from the cepstrum. This last training part may need some closer inspection to better match the paper though.
+<br/><br/><br/><br/><br/><br/><br/><br/><br/><br/><br/><br/>
 
 ### Results
 I'm pretty with the results so far, they are way better than all my other experiments.
