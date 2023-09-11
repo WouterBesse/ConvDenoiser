@@ -1,6 +1,6 @@
 # Ways of denoising Mel Cepstrums using convolutional networks.
 
-In this repo, I'm trying to denoise noisy Mel Cepstrums for resynthesis with a vocoder. For this I have three legacy experiments, and one main architecture using a WaveNet VAE setup.
+In this repo, I'm trying to denoise noisy Mel Cepstrums for resynthesis with a vocoder. For this I have three legacy experiments, and one main architecture using a **WaveNet VAE** setup.
 
 Each method has its' own notebook, ~~they all share the same preprocessing functions.~~
 The data needs to be provided as separate clean speech files and ambience noise files, which it stitches together to make new noisy speech files.
